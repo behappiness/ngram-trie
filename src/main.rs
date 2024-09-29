@@ -6,6 +6,7 @@ use std::io::BufWriter;
 use bincode::serialize_into;
 use serde::Serialize;
 use serde::Deserialize;
+use serde_json;
 
 #[derive(Serialize, Deserialize)]
 struct TrieNode {
@@ -110,23 +111,42 @@ impl NGramTrie {
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         Ok(trie)
     }
+
+    fn fit(tokens: &[u32], n_gram_max_length: u32) -> Self {
+        let mut trie = NGramTrie::new(n_gram_max_length);
+        for i in 0..tokens.len() - n_gram_max_length as usize + 1 {
+            let n_gram = &tokens[i..i + n_gram_max_length as usize];
+            trie.insert(n_gram);
+        }
+        trie
+    }
     
+    
+}
+
+fn load_tokens_from_json(filename: &str) -> std::io::Result<Vec<u32>> {
+    let file = File::open(filename)?;
+    let reader = BufReader::new(file);
+    let tokens: Vec<u32> = serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(tokens)
 }
 
 
 
-
-
 fn main() {
-    let mut trie = NGramTrie::new(3);
-    trie.insert(&[1, 2, 3]);
-    trie.insert(&[1, 2, 4]);
-    trie.insert(&[2, 3, 4]);
-    trie.insert(&[3, 4, 5]);
-    println!("{:?}", trie.search(&[1, 2, 3], Some("++*")));
-    println!("{:?}", trie.search(&[2, 3, 4], Some("+++")));
+    let tokens = load_tokens_from_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json").unwrap();
+    println!("Loaded {} tokens from JSON", tokens.len());
+
+    //let tokens = vec![1, 2, 3, 1, 2, 4, 2, 3, 4, 3, 4, 5];
+    let trie = NGramTrie::fit(&tokens, 3);
+
+    println!("{:?}", trie.search(&[4038, 2193], Some("++")));
+    println!("{:?}", trie.search(&[4038, 2193, 2332], Some("+++")));
+    println!("{:?}", trie.search(&[4038, 2193, 2332], Some("++*")));
+
     trie.save("trie.bin").expect("Failed to save trie");
     let loaded_trie = NGramTrie::load("trie.bin").unwrap();
-    println!("{:?}", loaded_trie.search(&[1, 2, 3], Some("++*")));
-    println!("{:?}", loaded_trie.search(&[2, 3, 4], Some("+++")));
+
+    println!("{:?}", loaded_trie.search(&[4038, 2193, 2332], Some("++*")));
+
 }
