@@ -1,5 +1,13 @@
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::BufReader;
+use bincode::deserialize_from;
+use std::io::BufWriter;
+use bincode::serialize_into;
+use serde::Serialize;
+use serde::Deserialize;
 
+#[derive(Serialize, Deserialize)]
 struct TrieNode {
     children: HashMap<u32, TrieNode>, // maybe u16 is enough
     count: u32
@@ -15,6 +23,7 @@ impl TrieNode {
 }
 
 // #[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize)]
 struct NGramTrie {
     root: TrieNode,
     n_gram_max_length: u32,
@@ -87,7 +96,25 @@ impl NGramTrie {
         assert!(search_context.len() <= self.n_gram_max_length as usize, "Search context length must be less than or equal to the maximum length");
         _search(&self.root, &search_context, 0)
     }
+
+    fn save(&self, filename: &str) -> std::io::Result<()> {
+        let file = File::create(filename)?;
+        let writer = BufWriter::new(file);
+        serialize_into(writer, self).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(())
+    }
+
+    fn load(filename: &str) -> std::io::Result<Self> {
+        let file = File::open(filename)?;
+        let reader = BufReader::new(file);
+        let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        Ok(trie)
+    }
+    
 }
+
+
+
 
 
 fn main() {
@@ -97,4 +124,9 @@ fn main() {
     trie.insert(&[2, 3, 4]);
     trie.insert(&[3, 4, 5]);
     println!("{:?}", trie.search(&[1, 2, 3], Some("++*")));
+    println!("{:?}", trie.search(&[2, 3, 4], Some("+++")));
+    trie.save("trie.bin").expect("Failed to save trie");
+    let loaded_trie = NGramTrie::load("trie.bin").unwrap();
+    println!("{:?}", loaded_trie.search(&[1, 2, 3], Some("++*")));
+    println!("{:?}", loaded_trie.search(&[2, 3, 4], Some("+++")));
 }
