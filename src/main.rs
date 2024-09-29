@@ -21,6 +21,25 @@ impl TrieNode {
             count: 0,
         }
     }
+
+    fn merge(&mut self, other: &TrieNode) {
+        // Update the count for the current node
+        self.count += other.count;
+
+        // Merge children
+        for (char, other_child) in &other.children {
+            match self.children.entry(*char) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    // If the current trie doesn't have this child, clone the other's child
+                    entry.insert(other_child.clone());
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    // If both tries have this child, recursively merge them
+                    entry.get_mut().merge(other_child);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -155,26 +174,7 @@ impl NGramTrie {
 
     /// Merges another trie into this one
     fn merge(&mut self, other: &NGramTrie) {
-        NGramTrie::merge_nodes(&mut self.root, &other.root);
-    }
-
-    fn merge_nodes(current: &mut TrieNode, other: &TrieNode) {
-        // Update the count for the current node
-        current.count += other.count;
-
-        // Merge children
-        for (char, other_child) in &other.children {
-            match current.children.entry(*char) {
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    // If the current trie doesn't have this child, clone the other's child
-                    entry.insert(other_child.clone());
-                }
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    // If both tries have this child, recursively merge them
-                    NGramTrie::merge_nodes(entry.get_mut(), other_child);
-                }
-            }
-        }
+        self.root.merge(&other.root);
     }
 
     fn size_in_ram(node: &TrieNode) -> usize {
