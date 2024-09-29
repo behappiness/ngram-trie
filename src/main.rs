@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde::Deserialize;
 use serde_json;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct TrieNode {
     children: HashMap<u32, TrieNode>, // maybe u16 is enough
     count: u32
@@ -23,8 +23,7 @@ impl TrieNode {
     }
 }
 
-// #[derive(Serialize, Deserialize, Debug)]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct NGramTrie {
     root: TrieNode,
     n_gram_max_length: u32,
@@ -120,6 +119,72 @@ impl NGramTrie {
         }
         trie
     }
+
+    fn fit_multithreaded(tokens: &[u32], n_gram_max_length: u32) -> Self {
+        let mut trie = NGramTrie::new(n_gram_max_length);
+
+        let num_threads = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1);
+        println!("Using {} threads for multithreaded fitting", num_threads);
+        
+        let chunk_size = (tokens.len() - n_gram_max_length as usize + 1) / num_threads;
+        let mut handles = vec![];
+
+        for chunk_start in (0..tokens.len() - n_gram_max_length as usize + 1).step_by(chunk_size) {
+            let chunk_end = std::cmp::min(chunk_start + chunk_size, tokens.len() - n_gram_max_length as usize + 1);
+            let tokens_slice = tokens[chunk_start..].to_vec();
+            let mut trie_clone = trie.clone();
+            let n_gram_max_length_clone = n_gram_max_length;
+
+            let handle = std::thread::spawn(move || {
+                for i in 0..chunk_end - chunk_start {
+                    let n_gram = &tokens_slice[i..i + n_gram_max_length_clone as usize];
+                    trie_clone.insert(n_gram);
+                }
+                trie_clone
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let partial_trie = handle.join().unwrap();
+            trie.merge(&partial_trie);
+        }
+        trie
+    }
+
+    /// Merges another trie into this one
+    fn merge(&mut self, other: &NGramTrie) {
+        NGramTrie::merge_nodes(&mut self.root, &other.root);
+    }
+
+    fn merge_nodes(current: &mut TrieNode, other: &TrieNode) {
+        // Update the count for the current node
+        current.count += other.count;
+
+        // Merge children
+        for (char, other_child) in &other.children {
+            match current.children.entry(*char) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    // If the current trie doesn't have this child, clone the other's child
+                    entry.insert(other_child.clone());
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    // If both tries have this child, recursively merge them
+                    NGramTrie::merge_nodes(entry.get_mut(), other_child);
+                }
+            }
+        }
+    }
+
+    fn size_in_ram(node: &TrieNode) -> usize {
+        let mut size = std::mem::size_of::<TrieNode>();
+        size += node.children.capacity() * std::mem::size_of::<(u32, TrieNode)>();
+        for child in node.children.values() {
+            size += Self::size_in_ram(child);
+        }
+        size
+    }
     
     
 }
@@ -138,15 +203,35 @@ fn main() {
     println!("Loaded {} tokens from JSON", tokens.len());
 
     //let tokens = vec![1, 2, 3, 1, 2, 4, 2, 3, 4, 3, 4, 5];
-    let trie = NGramTrie::fit(&tokens, 3);
+    let start = std::time::Instant::now();
+    let _trie = NGramTrie::fit(&tokens, 3);
+    let duration = start.elapsed();
+    println!("Time taken to fit NGramTrie: {:?}", duration);
 
-    println!("{:?}", trie.search(&[4038, 2193], Some("++")));
+    let start = std::time::Instant::now();
+    let trie = NGramTrie::fit_multithreaded(&tokens, 3);
+    let duration = start.elapsed();
+    println!("Time taken to fit NGramTrie: {:?}", duration);
+
+    let start = std::time::Instant::now();
+    let result = trie.search(&[4038, 2193], Some("++"));
+    let duration = start.elapsed();
+    println!("Result: {:?}", result);
+    println!("Time taken: {:?}", duration);
+
+
     println!("{:?}", trie.search(&[4038, 2193, 2332], Some("+++")));
+
+    
     println!("{:?}", trie.search(&[4038, 2193, 2332], Some("++*")));
 
     trie.save("trie.bin").expect("Failed to save trie");
     let loaded_trie = NGramTrie::load("trie.bin").unwrap();
 
     println!("{:?}", loaded_trie.search(&[4038, 2193, 2332], Some("++*")));
+    
+    
+    let total_size = NGramTrie::size_in_ram(&trie.root);
+    println!("Total size of the trie (including all nodes): {:.2} MB", total_size as f64 / (1024.0 * 1024.0));
 
 }
