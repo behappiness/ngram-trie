@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::sync::Arc;
+use std::ops::Range;
 use std::fs::File;
 use std::io::BufReader;
 use bincode::deserialize_from;
@@ -8,17 +9,18 @@ use serde::Serialize;
 use serde::Deserialize;
 use serde_json;
 use std::mem;
+use fxhash::FxHashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct TrieNode {
-    children: HashMap<u32, Box<TrieNode>>, // maybe u16 is enough
+    children: FxHashMap<u32, Box<TrieNode>>, // maybe u16 is enough
     count: u32
 }
 
 impl TrieNode {
     fn new() -> Self {
         TrieNode {
-            children: HashMap::new(),
+            children: FxHashMap::default(),
             count: 0,
         }
     }
@@ -36,15 +38,13 @@ impl TrieNode {
         }
     }
 
-    fn insert(&mut self, n_gram: &[u32], depth: usize) {
-        if depth == n_gram.len() {
-            self.count += 1;
-            return;
-        }
+    fn insert(&mut self, n_gram: &[u32]) {
+        self.count += 1;
+        if n_gram.len() == 0 { return; }
         self.children
-            .entry(n_gram[depth])
+            .entry(n_gram[0])
             .or_insert_with(|| Box::new(TrieNode::new()))
-            .insert(n_gram, depth + 1);
+            .insert(&n_gram[1..]);
     }
 
     fn size_in_ram(&self) -> usize {
@@ -73,7 +73,7 @@ impl NGramTrie {
 
     fn insert(&mut self, n_gram: &[u32]) {
         //assert!(n_gram.len() == self.n_gram_max_length as usize, "N-gram length must be equal to the maximum length");
-        self.root.insert(n_gram, 0);
+        self.root.insert(n_gram);
     }
 
     fn _preprocess_rule_context(&self, tokens: &[u32], rule_context: Option<&str>) -> Vec<Option<u32>> {
@@ -117,7 +117,7 @@ impl NGramTrie {
                     }
                 }
             }
-            
+
             total_count
         }
 
@@ -157,18 +157,23 @@ impl NGramTrie {
 
         let chunk_size = (tokens.len() as f64 / num_threads as f64).ceil() as usize;
 
-        let chunks: Vec<Vec<u32>> = (0..num_threads)
-            .map(|i| {
-                //println!("Processing chunk {}", i);
-                let start = i * chunk_size;
-                let end = if i == num_threads - 1 {
-                    tokens.len()
-                } else {
-                    (i + 1) * chunk_size + n_gram_max_length as usize - 1
-                };
-                tokens[start..end].to_owned()
-            })
-            .collect();
+        let mut chunks: Vec<Vec<u32>> = Vec::new();
+
+        for i in 0..num_threads {
+            //println!("Processing chunk {}", i);
+            let start = i * chunk_size;
+            let end = if i == num_threads - 1 {
+                tokens.len()
+            } else {
+                (i + 1) * chunk_size + n_gram_max_length as usize - 1
+            };
+            chunks.push(tokens[start..end].to_owned());
+        }
+
+        for chunk in &mut chunks {
+            chunk.shrink_to_fit();
+        }
+        chunks.shrink_to_fit();
 
         //println!("Number of chunks: {}", chunks.len());
 
@@ -195,6 +200,62 @@ impl NGramTrie {
         trie
     }
 
+    fn multithred_recursively(chunks: Arc<Vec<Vec<u32>>>, range: Range<usize>, n_gram_max_length: u32) -> NGramTrie {
+        if range.len() > 1 {
+            let mid = (range.start + range.end) / 2;
+            let left = range.start..mid;
+            let right = mid..range.end;
+            // Recursively process both halves
+            let right_clone = chunks.clone();
+            let handle = std::thread::spawn(move || {
+                NGramTrie::multithred_recursively(right_clone, right, n_gram_max_length)
+            });
+            let mut left_trie = NGramTrie::multithred_recursively(chunks, left, n_gram_max_length);
+            let right_trie = handle.join().unwrap();
+            left_trie.merge(&right_trie);
+            left_trie
+        } else {
+            let mut trie = NGramTrie::new(n_gram_max_length);
+            for i in 0..chunks[range.start].len() - n_gram_max_length as usize + 1 {
+                let n_gram = &chunks[range.start][i..i + n_gram_max_length as usize];
+                trie.insert(n_gram);
+            }
+            trie
+        }
+    }
+
+    fn load_and_split_huge_file(file_path: &str, n_gram_max_length: u32) -> Result<Arc<Vec<Vec<u32>>>, std::io::Error> {
+        // Load the file
+        let file = File::open(file_path)?;
+        let reader = BufReader::new(file);
+        let numbers: Vec<u32> = serde_json::from_reader(reader)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    
+        // Get the number of CPU cores
+        let num_cores = std::thread::available_parallelism()
+            .map(|p| p.get()).unwrap_or(1);
+    
+        // Calculate chunk size
+        let chunk_size = ((numbers.len() as f64) / (num_cores as f64)).ceil() as usize;
+    
+        // Split into chunks
+        let mut chunks: Vec<Vec<u32>> = Vec::new();
+
+        for i in 0..num_cores {
+            //println!("Processing chunk {}", i);
+            let start = i * chunk_size;
+            let end = if i == num_cores - 1 {
+                numbers.len()
+            } else {
+                (i + 1) * chunk_size + n_gram_max_length as usize - 1
+            };
+            chunks.push(numbers[start..end].to_owned());
+        }
+    
+        // Wrap in Arc and return
+        Ok(Arc::new(chunks))
+    }
+
     /// Merges another trie into this one
     fn merge(&mut self, other: &NGramTrie) {
         self.root.merge(&other.root);
@@ -214,42 +275,88 @@ fn load_tokens_from_json(filename: &str) -> std::io::Result<Vec<u32>> {
     Ok(tokens)
 }
 
-
-
 fn main() {
-    let tokens = load_tokens_from_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json").unwrap();
-    println!("Loaded {} tokens from JSON", tokens.len());
+    let filename = "/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json";
+    let n_gram_max_length = 30;
 
-    let start = std::time::Instant::now();
-    let _trie = NGramTrie::fit(&tokens, 3);
-    let duration = start.elapsed();
-    println!("Time taken to fit NGramTrie: {:?}", duration);
+    // {   // old approach (single threaded)
+    //     println!("Old approach (single threaded):");
+    //     let tokens = load_tokens_from_json(filename).unwrap();
+    //     println!("Loaded {} tokens from JSON", tokens.len());
 
-    println!("{:?}", _trie.search(&[4038, 2193, 2332], Some("+++")));
+    //     let start = std::time::Instant::now();
+    //     let trie = NGramTrie::fit(&tokens, n_gram_max_length);
+    //     let duration = start.elapsed();
+    //     println!("Time taken to fit NGramTrie: {:?}", duration);
 
-    println!("{:?}", _trie.search(&[4038, 2193, 2332], Some("+*+")));
+    //     let start = std::time::Instant::now();
+    //     let result1 = trie.search(&[4038, 2193, 2332], Some("+++"));
+    //     let duration1 = start.elapsed();
+    //     println!("Result for '+++': {:?}", result1);
+    //     println!("Time taken for '+++': {:?}", duration1);
 
-    let start = std::time::Instant::now();
-    let trie = NGramTrie::fit_multithreaded(&tokens, 3);
-    let duration = start.elapsed();
-    println!("Time taken to fit NGramTrie: {:?}", duration);
+    //     let start = std::time::Instant::now();
+    //     let result2 = trie.search(&[4038, 2193, 2332], Some("+*+"));
+    //     let duration2 = start.elapsed();
+    //     println!("Result for '+*+': {:?}", result2);
+    //     println!("Time taken for '+*+': {:?}", duration2);
 
-    let trie = NGramTrie::load("trie.bin").unwrap();
+    //     let total_size = trie.size_in_ram();
+    //     println!("Total size of the trie (including all nodes): {:.2} MB", total_size as f64 / (1024.0 * 1024.0));
+    // }
 
-    let start = std::time::Instant::now();
-    let result = trie.search(&[4038, 2193, 2332], Some("+++"));
-    let duration = start.elapsed();
-    println!("Result: {:?}", result);
-    println!("Time taken: {:?}", duration);
+    {   // old approach (multithreaded)
+        println!("Old approach (multithreaded):");
+        let tokens = load_tokens_from_json(filename).unwrap();
+        println!("Loaded {} tokens from JSON", tokens.len());
 
-    println!("{:?}", trie.search(&[4038, 2193, 2332], Some("+++")));
+        let start = std::time::Instant::now();
+        let trie = NGramTrie::fit_multithreaded(&tokens, n_gram_max_length);
+        let duration = start.elapsed();
+        println!("Time taken to fit NGramTrie: {:?}", duration);
+
+        println!("Number of children: {}", trie.root.children.capacity());
+
+        let start = std::time::Instant::now();
+        let result1 = trie.search(&[4038, 2193, 2332], Some("+++"));
+        let duration1 = start.elapsed();
+        println!("Result for '+++': {:?}", result1);
+        println!("Time taken for '+++': {:?}", duration1);
+
+        let start = std::time::Instant::now();
+        let result2 = trie.search(&[4038, 2193, 2332], Some("++*"));
+        let duration2 = start.elapsed();
+        println!("Result for '++*': {:?}", result2);
+        println!("Time taken for '++*': {:?}", duration2);
+
+        let total_size = trie.size_in_ram();
+        println!("Total size of the trie (including all nodes): {:.2} MB", total_size as f64 / (1024.0 * 1024.0));
+    }
+
+    {   // new approach (multithreaded and recursively) 
+        println!("New approach (multithreaded and recursively):");
+        let chunks = NGramTrie::load_and_split_huge_file(filename, n_gram_max_length).unwrap();
+        let chunks_len = chunks.len();
+        println!("Loaded {} chunks from JSON", chunks_len);
     
-    println!("{:?}", trie.search(&[4038, 2193, 2332], Some("+*+")));
+        let start = std::time::Instant::now();
+        let trie = NGramTrie::multithred_recursively(chunks, 0..chunks_len, n_gram_max_length);
+        let duration = start.elapsed();
+        println!("Time taken to fit NGramTrie: {:?}", duration);
 
-    //trie.save("trie.bin").expect("Failed to save trie");
-    
-    
-    let total_size = trie.size_in_ram();
-    println!("Total size of the trie (including all nodes): {:.2} MB", total_size as f64 / (1024.0 * 1024.0));
+        let start = std::time::Instant::now();
+        let result1 = trie.search(&[4038, 2193, 2332], Some("+++"));
+        let duration1 = start.elapsed();
+        println!("Result for '+++': {:?}", result1);
+        println!("Time taken for '+++': {:?}", duration1);
 
+        let start = std::time::Instant::now();
+        let result2 = trie.search(&[4038, 2193, 2332], Some("++*"));
+        let duration2 = start.elapsed();
+        println!("Result for '++*': {:?}", result2);
+        println!("Time taken for '++*': {:?}", duration2);
+
+        let total_size = trie.size_in_ram();
+        println!("Total size of the trie (including all nodes): {:.2} MB", total_size as f64 / (1024.0 * 1024.0));
+    }
 }
