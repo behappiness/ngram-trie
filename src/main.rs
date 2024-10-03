@@ -72,14 +72,12 @@ impl NGramTrie {
         }
     }
 
+    //better to use this as it is simle, maybe even faster
     fn insert_recursive(&mut self, n_gram: &[u32]) {
         self.root.insert_recursive(n_gram);
     }
     
-    fn merge_recursive(&mut self, other: &NGramTrie) {
-        self.root.merge_recursive(&other.root);
-    }
-
+    #[deprecated]
     fn insert(&mut self, n_gram: &[u32]) {
         let mut current_node = &mut self.root;
         current_node.count += 1;
@@ -89,6 +87,12 @@ impl NGramTrie {
         }
     }
 
+    //better to use this as it is simle
+    fn merge_recursive(&mut self, other: &NGramTrie) {
+        self.root.merge_recursive(&other.root);
+    }
+
+    #[deprecated] //cant really work
     fn merge_shit(&mut self, other: &NGramTrie) {
         let mut stack = vec![(self.root.as_mut() as *mut TrieNode, other.root.as_ref() as *const TrieNode)];
 
@@ -111,6 +115,7 @@ impl NGramTrie {
         mem::size_of::<NGramTrie>() + self.root.size_in_ram_recursive()
     }
 
+    #[deprecated]
     fn size_in_ram(&self) -> usize {
         let mut total_size = mem::size_of::<NGramTrie>();
         let mut stack = vec![self.root.as_ref()];
