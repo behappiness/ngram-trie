@@ -28,36 +28,34 @@ impl TrieNode {
         }
     }
 
-    fn merge(&mut self, other: &TrieNode) {
-        // Update the count for the current node
+    fn merge_recursive(&mut self, other: &TrieNode) {
         self.count += other.count;
-
-        // Merge children
         for (char, other_child) in &other.children {
             self.children
                 .entry(*char)
                 .or_insert_with(|| Box::new(TrieNode::new()))
-                .merge(other_child);
+                .merge_recursive(other_child);
         }
     }
 
-    fn insert(&mut self, n_gram: &[u32]) {
+    fn insert_recursive(&mut self, n_gram: &[u32]) {
         self.count += 1;
         if n_gram.len() == 0 { return; }
         self.children
             .entry(n_gram[0])
             .or_insert_with(|| Box::new(TrieNode::new()))
-            .insert(&n_gram[1..]);
+            .insert_recursive(&n_gram[1..]);
     }
 
-    fn size_in_ram(&self) -> usize {
+    fn size_in_ram_recursive(&self) -> usize {
         let mut size = mem::size_of::<TrieNode>();
         size += self.children.capacity() * mem::size_of::<(u32, Box<TrieNode>)>();
         for child in self.children.values() {
-            size += child.size_in_ram();
+            size += child.size_in_ram_recursive();
         }
         size
     }
+
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -74,17 +72,55 @@ impl NGramTrie {
         }
     }
 
-    fn insert(&mut self, n_gram: &[u32]) {
-        //assert!(n_gram.len() == self.n_gram_max_length as usize, "N-gram length must be equal to the maximum length");
-        self.root.insert(n_gram);
+    fn insert_recursive(&mut self, n_gram: &[u32]) {
+        self.root.insert_recursive(n_gram);
+    }
+    
+    fn merge_recursive(&mut self, other: &NGramTrie) {
+        self.root.merge_recursive(&other.root);
     }
 
-    fn merge(&mut self, other: &NGramTrie) {
-        self.root.merge(&other.root);
+    fn insert(&mut self, n_gram: &[u32]) {
+        let mut current_node = &mut self.root;
+        current_node.count += 1;
+        for i in 0..n_gram.len() {
+            current_node = current_node.children.entry(n_gram[i]).or_insert_with(|| Box::new(TrieNode::new()));
+            current_node.count += 1;
+        }
+    }
+
+    fn merge_shit(&mut self, other: &NGramTrie) {
+        let mut stack = vec![(self.root.as_mut() as *mut TrieNode, other.root.as_ref() as *const TrieNode)];
+
+        unsafe {
+            while let Some((self_node_ptr, other_node_ptr)) = stack.pop() {
+                let self_node = &mut *self_node_ptr;
+                let other_node = &*other_node_ptr;
+
+                for (key, other_child) in &other_node.children {
+                    let self_child = self_node.children.entry(*key).or_insert_with(|| Box::new(TrieNode::new()));
+                    self_child.count += other_child.count;
+                    stack.push((self_child.as_mut() as *mut TrieNode, other_child.as_ref() as *const TrieNode));
+                }
+            }
+        }
+    }
+
+    //better to use size_in_ram, faster by 7-10%
+    fn size_in_ram_recursive(&self) -> usize {
+        mem::size_of::<NGramTrie>() + self.root.size_in_ram_recursive()
     }
 
     fn size_in_ram(&self) -> usize {
-        mem::size_of::<NGramTrie>() + self.root.size_in_ram()
+        let mut total_size = mem::size_of::<NGramTrie>();
+        let mut stack = vec![self.root.as_ref()];
+        while let Some(node) = stack.pop() {
+            total_size += mem::size_of::<TrieNode>() + node.children.capacity() * mem::size_of::<(u32, Box<TrieNode>)>();
+            for child in node.children.values() {
+                stack.push(child);
+            }
+        }
+        total_size
     }
 
     fn save(&self, filename: &str) -> std::io::Result<()> {
@@ -155,8 +191,7 @@ impl NGramTrie {
         let mut trie = NGramTrie::new(n_gram_max_length);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
         for i in 0..max_tokens - n_gram_max_length as usize + 1 {
-            let n_gram = &tokens[i..i + n_gram_max_length as usize];
-            trie.insert(n_gram);
+            trie.insert_recursive(&tokens[i..i + n_gram_max_length as usize]);
         }
         trie
     }
@@ -174,7 +209,7 @@ impl NGramTrie {
             let handle = std::thread::spawn(move || {
                 for i in range.start..range.end - n_gram_max_length as usize + 1 {
                     let n_gram = &_tokens[i..i + n_gram_max_length as usize];
-                    trie_clone.insert(n_gram);
+                    trie_clone.insert_recursive(n_gram);
                 }
                 trie_clone
             });
@@ -184,7 +219,7 @@ impl NGramTrie {
 
         for handle in handles {
             let partial_trie = handle.join().unwrap();
-            trie.merge(&partial_trie);
+            trie.merge_recursive(&partial_trie);
         }
         trie
     }
@@ -201,14 +236,14 @@ impl NGramTrie {
             });
             let mut left_trie = NGramTrie::fit_multithreaded_recursively(tokens, left, n_gram_max_length);
             let right_trie = handle.join().unwrap();
-            left_trie.merge(&right_trie);
+            left_trie.merge_recursive(&right_trie);
             left_trie
         } else {
             let mut trie = NGramTrie::new(n_gram_max_length);
             let range = &ranges[0];
             for i in range.start..range.end - n_gram_max_length as usize + 1 {
                 let n_gram = &tokens[i..i + n_gram_max_length as usize];
-                trie.insert(n_gram);
+                trie.insert_recursive(n_gram);
             }
             trie
         }
@@ -231,13 +266,13 @@ impl NGramTrie {
         Ok(Arc::new(tokens))
     }
     
-    fn split_into_ranges(tokens: Arc<Vec<u32>>, max_tokens: usize, num_threads: usize, n_gram_max_length: u32) -> Vec<Range<usize>> {
+    fn split_into_ranges(tokens: Arc<Vec<u32>>, max_tokens: usize, number_of_chunks: usize, n_gram_max_length: u32) -> Vec<Range<usize>> {
         let mut ranges = Vec::new();
         let max_tokens = std::cmp::min(max_tokens, tokens.len());
-        let chunk_size = (max_tokens as f64 / num_threads as f64).ceil() as usize;
-        for i in 0..num_threads {
+        let chunk_size = (max_tokens as f64 / number_of_chunks as f64).ceil() as usize;
+        for i in 0..number_of_chunks {
             let start = i * chunk_size;
-            let end = if i == num_threads - 1 {
+            let end = if i == number_of_chunks - 1 {
                 max_tokens
             } else {
                 (i + 1) * chunk_size + n_gram_max_length as usize - 1
@@ -301,9 +336,10 @@ fn run_performance_tests(filename: &str) {
 
 fn main() {
     let filename = "/home/boti/Desktop/ngram-llm-analysis/data/cleaned_tokenized_data.json";
-    run_performance_tests(filename);
+    //run_performance_tests(filename);
 
-    let x = 371710322;
-    let y = 0.0015 * (x as f64).powf(0.8891) / 1024.0;
-    println!("{}", y);
+    let x = 50_000_000;
+    let y = 0.0017 * (x as f64).powf(0.8814) / 1024.0;
+    let _x = (y / 0.0017).powf(1.0 / 0.8814) as u32;
+    println!("Expected ram usage for {} tokens: {} GB", x, y);
 }
