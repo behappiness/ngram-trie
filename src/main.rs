@@ -1,8 +1,10 @@
+use core::hash;
 use std::sync::Arc;
 use std::ops::Range;
 use std::fs::File;
 use std::io::BufReader;
 use bincode::deserialize_from;
+use hashbrown::HashMap;
 use std::io::BufWriter;
 use bincode::serialize_into;
 use serde::Serialize;
@@ -13,6 +15,104 @@ use fxhash::FxHashMap;
 use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::collections::HashSet;
+
+trait Smoothing{
+    fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u32>]) -> f64;
+}
+
+struct ModifiedBackoffKneserNey {
+    d1: f64,
+    d2: f64,
+    d3: f64,
+    uniform: f64
+}
+
+impl ModifiedBackoffKneserNey {
+    fn new(trie: &NGramTrie) -> Self {
+        let (_d1, _d2, _d3) = Self::calculate_d_values(trie);
+        let uniform = 1.0 / trie.unique_continuation_count(&[]) as f64;
+        ModifiedBackoffKneserNey {
+            d1: _d1,
+            d2: _d2,
+            d3: _d3,
+            uniform: uniform
+        }
+    }
+
+    fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64) {
+        let mut n1: u32 = 0;
+        let mut n2: u32 = 0;
+        let mut n3: u32 = 0;
+        let mut n4: u32 = 0;
+        for i in 1..=trie.n_gram_max_length {
+            let rule: Vec<Option<u32>> = vec![None; i as usize];
+            for node in trie.find_all_nodes(&rule) {
+                match node.count {
+                    1 => n1 += 1,
+                    2 => n2 += 1,
+                    3 => n3 += 1,
+                    4 => n4 += 1,
+                    _ => unreachable!()
+                }
+            }
+        }
+
+        if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {
+            return (0.1, 0.2, 0.3);
+        }
+
+        let y = n1 as f64 / (n1 + 2 * n2) as f64;
+        let d1 = 1.0 - 2.0 * y * (n2 as f64 / n1 as f64);
+        let d2 = 2.0 - 3.0 * y * (n3 as f64 / n2 as f64);
+        let d3 = 3.0 - 4.0 * y * (n4 as f64 / n3 as f64);
+        (d1, d2, d3)
+    }
+
+    //TODO: Cache
+    fn count_unique_ns(trie: &NGramTrie, rule: &[Option<u32>]) -> (u32, u32, u32) {
+        let mut n1 = HashSet::<u32>::new();
+        let mut n2 = HashSet::<u32>::new();
+        let mut n3 = HashSet::<u32>::new();
+        for node in trie.find_all_nodes(&rule) {
+            for (key, child) in &node.children {
+                match child.count {
+                    1 => { n1.insert(*key); },
+                    2 => { n2.insert(*key); },
+                    _ => { n3.insert(*key); }
+                }
+            }
+        }
+        (n1.len() as u32, n2.len() as u32, n3.len() as u32)
+    }
+}
+
+impl Smoothing for ModifiedBackoffKneserNey {
+    fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u32>]) -> f64 {
+        if rule.len() <= 1 {
+            return self.uniform;
+        }
+
+        let W_i = &rule[rule.len() - 1];
+        let W_i_minus_1 = &rule[..rule.len() - 1];
+
+        let C_i = trie.get_count(&rule);
+        let C_i_minus_1 = trie.get_count(&W_i_minus_1);
+
+        let d = match C_i {
+            0 => 0.0,
+            1 => self.d1,
+            2 => self.d2,
+            _ => self.d3
+        };
+
+        let (n1, n2, n3) = ModifiedBackoffKneserNey::count_unique_ns(trie, &rule);
+
+        let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
+
+        return (C_i as f64 - d) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 struct TrieNode {
@@ -56,19 +156,51 @@ impl TrieNode {
         size
     }
 
+    fn find_all_nodes(&self, rule: &[Option<u32>]) -> Vec<&TrieNode> {
+        if rule.len() == 0 { return vec![self]; }
+        else {
+            let mut nodes = Vec::<&TrieNode>::new();
+            match rule[0] {
+                None => {
+                    for child_node in self.children.values() {
+                        nodes.extend(child_node.find_all_nodes(&rule[1..]));
+                    }
+                },
+                Some(token) => {
+                    if let Some(child_node) = self.children.get(&token) {
+                        nodes.extend(child_node.find_all_nodes(&rule[1..]));
+                    }
+                }
+            }
+            nodes
+        }
+    }
+    
+    fn get_count(&self, rule: &[Option<u32>]) -> u32 {
+        if rule.len() == 0 { return self.count; }
+        else {
+            match rule[0] {
+                None => self.children.values()
+                    .map(|child| child.get_count(&rule[1..]))
+                    .sum(),
+                Some(token) => self.children.get(&token)
+                    .map_or(0, |child| child.get_count(&rule[1..]))
+            }
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct NGramTrie {
     root: Box<TrieNode>,
-    n_gram_max_length: u32,
+    n_gram_max_length: u32
 }
 
 impl NGramTrie {
     fn new(n_gram_max_length: u32) -> Self {
         NGramTrie {
             root: Box::new(TrieNode::new()),
-            n_gram_max_length,
+            n_gram_max_length
         }
     }
 
@@ -142,9 +274,8 @@ impl NGramTrie {
         Ok(trie)
     }
 
-    fn _preprocess_rule_context(&self, tokens: &[u32], rule_context: Option<&str>) -> Vec<Option<u32>> {
+    fn _preprocess_rule_context(tokens: &[u32], rule_context: Option<&str>) -> Vec<Option<u32>> {
         let mut result = Vec::new();
-        
         if let Some(rule_context) = rule_context {
             assert_eq!(tokens.len(), rule_context.len(), "Tokens and rule context must be of the same length");
             
@@ -158,38 +289,30 @@ impl NGramTrie {
         } else {
             result = tokens.iter().map(|&t| Some(t)).collect();
         }
-        
         result
     }
 
-    fn search(&self, tokens: &[u32], rule_context: Option<&str>) -> u32 {
-        fn _search(node: &TrieNode, rule_context: &[Option<u32>], depth: usize) -> u32 {
-            if depth == rule_context.len() { return node.count; }
+    fn get_count(&self, rule: &[Option<u32>]) -> u32 {
+        self.root.get_count(rule)
+    }
 
-            let mut total_count = 0;
-            let token = rule_context[depth];
+    //TODO: merge with unique_continuation_count?
+    fn find_all_nodes(&self, rule: &[Option<u32>]) -> Vec<&TrieNode> {
+        self.root.find_all_nodes(rule)
+    }
 
-            match token {
-                None => {
-                    for child_node in node.children.values() {
-                        total_count += _search(child_node, rule_context, depth + 1);
-                    }
-                },
-                Some(token) => {
-                    if let Some(child_node) = node.children.get(&token) {
-                        total_count += _search(child_node, rule_context, depth + 1);
-                    } else {
-                        return 0;
-                    }
-                }
-            }
-
-            total_count
+    fn unique_continuation_count(&self, rule: &[Option<u32>]) -> u32 {
+        let mut unique = HashSet::<u32>::new();
+        for node in self.find_all_nodes(rule) {
+            unique.extend(node.children.keys());
         }
+        unique.len() as u32
+    }
 
-        let search_context = self._preprocess_rule_context(tokens, rule_context);
-        assert!(search_context.len() <= self.n_gram_max_length as usize, "Search context length must be less than or equal to the maximum length");
-        _search(&self.root, &search_context, 0)
+    //TODO
+    fn probability(&self,  smoothing: &impl Smoothing, rule: &[Option<u32>]) -> f64 {
+        //TODO
+        smoothing.smoothing(self, rule)
     }
 
     fn fit(tokens: Arc<Vec<u32>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
@@ -339,12 +462,59 @@ fn run_performance_tests(filename: &str) {
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
 
+fn calculate_ruleset(n_gram_max_length: u32) -> Vec<String> {
+    if n_gram_max_length == 1 {
+        return vec!["+".to_string(), "-".to_string()];
+    }
+    let mut ruleset = Vec::<String>::new();
+    ruleset.extend(calculate_ruleset(n_gram_max_length - 1));
+
+    let characters = vec!["+", "*", "-"];
+    
+    let mut combinations : Vec<String> = (2..n_gram_max_length).fold(
+        characters.iter().map(|c| characters.iter().map(move |&d| d.to_owned() + *c)).flatten().collect(),
+        |acc,_| acc.into_iter().map(|c| characters.iter().map(move |&d| d.to_owned() + &*c)).flatten().collect()
+    );
+
+    combinations.retain(|comb| comb.starts_with('+'));
+
+    let mut tokens = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".to_string();
+    tokens.truncate(n_gram_max_length as usize);
+    let mut hashmap = HashMap::<String, String>::new();
+
+    for comb in combinations {
+        let mut key = "".to_string();
+        for (token, rule) in tokens.chars().zip(comb.chars()) {
+            match rule {
+                '*' => key += "*",
+                '-' => continue,
+                _ => key += &token.to_string(),
+            }
+        }
+        hashmap.insert(key, comb);
+    }
+
+    ruleset.extend(hashmap.values().cloned());
+
+    ruleset
+}
+
 fn main() {
     let filename = "/home/boti/Desktop/ngram-llm-analysis/data/cleaned_tokenized_data.json";
     //run_performance_tests(filename);
 
-    let x = 50_000_000;
+    for i in 1..8 {
+        let all = calculate_ruleset(i);
+        println!("{}-gram rule size: {}", i, all.len())
+    }
+
+    println!("{:?}", calculate_ruleset(7));
+
+
+    let x = 370_000_000;
     let y = 0.0017 * (x as f64).powf(0.8814) / 1024.0;
     let _x = (y / 0.0017).powf(1.0 / 0.8814) as u32;
+    let t = (0.000003 * x as f64 - 0.533) / 60.0;
+    println!("Expected time for {} tokens: {} min", x, t);
     println!("Expected ram usage for {} tokens: {} GB", x, y);
 }
