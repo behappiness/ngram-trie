@@ -199,7 +199,7 @@ struct NGramTrie {
 
 impl NGramTrie {
     fn new(n_gram_max_length: u32) -> Self {
-        let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length);
+        let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length - 1);
         NGramTrie {
             root: Box::new(TrieNode::new()),
             n_gram_max_length,
