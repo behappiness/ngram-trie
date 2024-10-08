@@ -1,4 +1,3 @@
-use core::hash;
 use std::sync::Arc;
 use std::ops::Range;
 use std::fs::File;
@@ -16,11 +15,15 @@ use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::collections::HashSet;
+use actix_web::{web, App, HttpServer, Responder};
+use tqdm::tqdm;
+use std::fs::metadata;
 
-trait Smoothing{
+trait Smoothing: Clone{
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u32>]) -> f64;
 }
 
+#[derive(Clone)]
 struct ModifiedBackoffKneserNey {
     d1: f64,
     d2: f64,
@@ -53,7 +56,7 @@ impl ModifiedBackoffKneserNey {
                     2 => n2 += 1,
                     3 => n3 += 1,
                     4 => n4 += 1,
-                    _ => unreachable!()
+                    _ => ()
                 }
             }
         }
@@ -266,16 +269,28 @@ impl NGramTrie {
     }
 
     fn save(&self, filename: &str) -> std::io::Result<()> {
+        println!("----- Saving trie -----");
+        let start = Instant::now();
         let file = File::create(filename)?;
         let writer = BufWriter::new(file);
         serialize_into(writer, self).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let duration = start.elapsed();
+        println!("Time taken to save trie: {:?}", duration);
+        let file_size = metadata(filename).expect("Unable to get file metadata").len();
+        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
+        println!("Size of saved file: {:.2} MB", file_size_mb);
         Ok(())
     }
 
     fn load(filename: &str) -> std::io::Result<Self> {
+        println!("----- Loading trie -----");
+        let start = Instant::now();
         let file = File::open(filename)?;
         let reader = BufReader::new(file);
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let duration = start.elapsed();
+        println!("Time taken to load trie: {:?}", duration);
+        println!("Size of loaded trie in RAM: {} MB", trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0));
         Ok(trie)
     }
 
@@ -335,7 +350,9 @@ impl NGramTrie {
     }
 
     fn set_rule_set(&mut self, rule_set: Vec<String>) {
+        println!("----- Setting rule set -----");
         self.rule_set = rule_set;
+        println!("Rule set: {:?}", self.rule_set);
     }
 
     fn get_count(&self, rule: &[Option<u32>]) -> u32 {
@@ -355,7 +372,7 @@ impl NGramTrie {
         unique
     }
 
-    //TODO
+    //TODO: Cache??
     fn probability_for_token(&self, smoothing: &impl Smoothing, history: &[u32], predict: u32) -> Vec<(String, f64)> {
         let mut rules_smoothed = Vec::<(String, f64)>::new();
 
@@ -368,23 +385,34 @@ impl NGramTrie {
         rules_smoothed
     }
 
-    fn get_prediction_probabilities(&self, smoothing: &impl Smoothing, history: &[u32]) -> HashMap::<u32, Vec<(String, f64)>> { 
-        let mut prediction_probabilities = HashMap::<u32, Vec<(String, f64)>>::new();
+    fn get_prediction_probabilities(&self, smoothing: &impl Smoothing, history: &[u32]) -> Vec<(u32, Vec<(String, f64)>)> { 
+        let mut prediction_probabilities = Vec::<(u32, Vec<(String, f64)>)>::new();
 
         for token in self.root.children.keys() {
             let probabilities = self.probability_for_token(smoothing, history, *token);
-            prediction_probabilities.insert(*token, probabilities);
+            prediction_probabilities.push((*token, probabilities));
         }
 
         prediction_probabilities
     }
 
     fn fit(tokens: Arc<Vec<u32>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
+        println!("----- Trie fitting -----");
+        let x = tokens.len() as f64; //450_000_000;
+        let y = 0.0017 * x.powf(0.8814);
+        let _x = (y / 0.0017).powf(1.0 / 0.8814) as f64;
+        let t = (0.000003 * x - 0.533) / 60.0;
+        println!("Expected time for {} tokens: {} min", x, t);
+        println!("Expected ram usage for {} tokens: {} MB", x, y);
+        let start = Instant::now();
         let mut trie = NGramTrie::new(n_gram_max_length);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
-        for i in 0..max_tokens - n_gram_max_length as usize + 1 {
+        for i in tqdm(0..max_tokens - n_gram_max_length as usize + 1) {
             trie.insert_recursive(&tokens[i..i + n_gram_max_length as usize]);
         }
+        let duration = start.elapsed();
+        println!("Time taken to fit trie: {:?}", duration);
+        println!("Size of trie in RAM: {} MB", trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0));
         trie
     }
 
@@ -442,19 +470,21 @@ impl NGramTrie {
     }
 
     fn load_json(filename: &str, max_tokens: Option<usize>) -> std::io::Result<Arc<Vec<u32>>> {
+        println!("----- Loading tokens -----");
         let file = File::open(filename)?;
         let reader = BufReader::new(file);
         let start = std::time::Instant::now();
         let mut tokens: Vec<u32> = serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         println!("Time taken to load tokens: {:?}", duration);
-        println!("Size of tokens in RAM: {} bytes", tokens.len() * std::mem::size_of::<u32>());
+        println!("Size of tokens in RAM: {:.2} MB", (tokens.len() * std::mem::size_of::<u32>()) as f64 / 1024.0 / 1024.0);
         if let Some(max) = max_tokens {
             if max < tokens.len() {
                 tokens.truncate(max);
             }
         }
-        println!("Size of tokens in RAM after truncation: {} bytes", tokens.len() * std::mem::size_of::<u32>());
+        println!("Size of tokens in RAM after truncation: {:.2} MB", (tokens.len() * std::mem::size_of::<u32>()) as f64 / 1024.0 / 1024.0);
+        println!("Tokens loaded: {}", tokens.len());
         Ok(Arc::new(tokens))
     }
     
@@ -526,22 +556,52 @@ fn run_performance_tests(filename: &str) {
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
 
-fn main() {
-    let filename = "/home/boti/Desktop/ngram-llm-analysis/data/cleaned_tokenized_data.json";
-    //run_performance_tests(filename);
+#[derive(Serialize, Deserialize)]
+struct PredictionRequest {
+    history: Vec<u32>,
+    predict: u32,
+}
 
-    for i in 1..8 {
-        let all = NGramTrie::_calculate_ruleset(i);
-        println!("{}-gram rule size: {}", i, all.len())
-    }
+#[derive(Serialize)]
+struct PredictionResponse {
+    probabilities: Vec<(u32, Vec<(String, f64)>)>,
+}
 
-    println!("{:?}", NGramTrie::_calculate_ruleset(7));
+async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<NGramTrie>, smoothing: web::Data<ModifiedBackoffKneserNey>) -> impl Responder {
+    let mut probabilities = trie.get_prediction_probabilities(smoothing.as_ref(), &req.history);
 
+    probabilities.sort_by_key(|k| k.0);
 
-    let x = 370_000_000;
-    let y = 0.0017 * (x as f64).powf(0.8814) / 1024.0;
-    let _x = (y / 0.0017).powf(1.0 / 0.8814) as u32;
-    let t = (0.000003 * x as f64 - 0.533) / 60.0;
-    println!("Expected time for {} tokens: {} min", x, t);
-    println!("Expected ram usage for {} tokens: {} GB", x, y);
+    let response = PredictionResponse {
+        probabilities: probabilities,
+    };
+    web::Json(response)
+}
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
+
+    let mut trie = NGramTrie::fit(tokens, 7, None);
+    
+    trie.save("trie.bin");
+
+    trie.set_rule_set(vec!["++++++".to_string()]);
+
+    let smoothing = ModifiedBackoffKneserNey::new(&trie);
+    println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", smoothing.d1, smoothing.d2, smoothing.d3, smoothing.uniform);
+
+    let trie = Arc::new(trie);
+    let smoothing = Arc::new(smoothing);
+
+    println!("----- Starting HTTP server -----");
+    HttpServer::new(move || {
+        App::new()
+            .app_data(trie.clone())
+            .app_data(smoothing.clone())
+            .service(web::resource("/predict").route(web::post().to(predict_probability)))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
 }
