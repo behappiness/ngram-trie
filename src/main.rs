@@ -31,7 +31,7 @@ struct ModifiedBackoffKneserNey {
 impl ModifiedBackoffKneserNey {
     fn new(trie: &NGramTrie) -> Self {
         let (_d1, _d2, _d3) = Self::calculate_d_values(trie);
-        let uniform = 1.0 / trie.unique_continuation_count(&[]) as f64;
+        let uniform = 1.0 / trie.root.children.len() as f64;
         ModifiedBackoffKneserNey {
             d1: _d1,
             d2: _d2,
@@ -87,9 +87,11 @@ impl ModifiedBackoffKneserNey {
     }
 }
 
+//From Chen & Goodman 1998
 impl Smoothing for ModifiedBackoffKneserNey {
+    //TODO: Cache
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u32>]) -> f64 {
-        if rule.len() <= 1 {
+        if rule.len() <= 0 {
             return self.uniform;
         }
 
@@ -106,11 +108,11 @@ impl Smoothing for ModifiedBackoffKneserNey {
             _ => self.d3
         };
 
-        let (n1, n2, n3) = ModifiedBackoffKneserNey::count_unique_ns(trie, &rule);
+        let (n1, n2, n3) = ModifiedBackoffKneserNey::count_unique_ns(trie, &W_i_minus_1);
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
 
-        return (C_i as f64 - d) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
+        return (C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
     }
 }
 
@@ -332,6 +334,10 @@ impl NGramTrie {
         ruleset
     }
 
+    fn set_rule_set(&mut self, rule_set: Vec<String>) {
+        self.rule_set = rule_set;
+    }
+
     fn get_count(&self, rule: &[Option<u32>]) -> u32 {
         self.root.get_count(rule)
     }
@@ -341,26 +347,36 @@ impl NGramTrie {
         self.root.find_all_nodes(rule)
     }
 
-    fn unique_continuation_count(&self, rule: &[Option<u32>]) -> u32 {
+    fn unique_continuations(&self, rule: &[Option<u32>]) -> HashSet<u32> {
         let mut unique = HashSet::<u32>::new();
         for node in self.find_all_nodes(rule) {
             unique.extend(node.children.keys());
         }
-        unique.len() as u32
+        unique
     }
 
     //TODO
-    fn probability(&self,  smoothing: &impl Smoothing, tokens: &[u32]) -> f64 {
-        let mut rules_smoothed = HashMap::<&String, f64>::new();
+    fn probability_for_token(&self, smoothing: &impl Smoothing, history: &[u32], predict: u32) -> Vec<(String, f64)> {
+        let mut rules_smoothed = Vec::<(String, f64)>::new();
 
-        for r_set in &self.rule_set {
-            let rule = NGramTrie::_preprocess_rule_context(tokens, Some(&r_set));
-            rules_smoothed.insert(r_set, smoothing.smoothing(&self, &rule));
+        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
+            let mut rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
+            rule.push(Some(predict));
+            rules_smoothed.push((r_set.to_string(), smoothing.smoothing(&self, &rule)));
         }
 
-        println!("{:?}", rules_smoothed.values());
-        //TODO
-        0.0
+        rules_smoothed
+    }
+
+    fn get_prediction_probabilities(&self, smoothing: &impl Smoothing, history: &[u32]) -> HashMap::<u32, Vec<(String, f64)>> { 
+        let mut prediction_probabilities = HashMap::<u32, Vec<(String, f64)>>::new();
+
+        for token in self.root.children.keys() {
+            let probabilities = self.probability_for_token(smoothing, history, *token);
+            prediction_probabilities.insert(*token, probabilities);
+        }
+
+        prediction_probabilities
     }
 
     fn fit(tokens: Arc<Vec<u32>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
@@ -483,7 +499,7 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u32>>, data_sizes: Vec<usize
             let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, Some(data_size));
             let fit_time = start.elapsed().as_secs_f64(); 
             // Measure RAM usage
-            let ram_usage = trie.size_in_ram() as f64 / (1024.0 * 1024.0);
+            let ram_usage = trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0);
 
             // Write statistics to file
             writeln!(
