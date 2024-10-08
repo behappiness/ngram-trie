@@ -193,14 +193,17 @@ impl TrieNode {
 #[derive(Serialize, Deserialize, Clone)]
 struct NGramTrie {
     root: Box<TrieNode>,
-    n_gram_max_length: u32
+    n_gram_max_length: u32,
+    rule_set: Vec<String>
 }
 
 impl NGramTrie {
     fn new(n_gram_max_length: u32) -> Self {
+        let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length);
         NGramTrie {
             root: Box::new(TrieNode::new()),
-            n_gram_max_length
+            n_gram_max_length,
+            rule_set: _rule_set
         }
     }
 
@@ -292,6 +295,43 @@ impl NGramTrie {
         result
     }
 
+    fn _calculate_ruleset(n_gram_max_length: u32) -> Vec<String> {
+        if n_gram_max_length == 1 {
+            return vec!["+".to_string(), "-".to_string()];
+        }
+        let mut ruleset = Vec::<String>::new();
+        ruleset.extend(NGramTrie::_calculate_ruleset(n_gram_max_length - 1));
+    
+        let characters = vec!["+", "*", "-"];
+        
+        let mut combinations : Vec<String> = (2..n_gram_max_length).fold(
+            characters.iter().map(|c| characters.iter().map(move |&d| d.to_owned() + *c)).flatten().collect(),
+            |acc,_| acc.into_iter().map(|c| characters.iter().map(move |&d| d.to_owned() + &*c)).flatten().collect()
+        );
+    
+        combinations.retain(|comb| comb.starts_with('+'));
+    
+        let mut tokens = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".to_string();
+        tokens.truncate(n_gram_max_length as usize);
+        let mut hashmap = HashMap::<String, String>::new();
+    
+        for comb in combinations {
+            let mut key = "".to_string();
+            for (token, rule) in tokens.chars().zip(comb.chars()) {
+                match rule {
+                    '*' => key += "*",
+                    '-' => continue,
+                    _ => key += &token.to_string(),
+                }
+            }
+            hashmap.insert(key, comb);
+        }
+    
+        ruleset.extend(hashmap.values().cloned());
+    
+        ruleset
+    }
+
     fn get_count(&self, rule: &[Option<u32>]) -> u32 {
         self.root.get_count(rule)
     }
@@ -310,9 +350,17 @@ impl NGramTrie {
     }
 
     //TODO
-    fn probability(&self,  smoothing: &impl Smoothing, rule: &[Option<u32>]) -> f64 {
+    fn probability(&self,  smoothing: &impl Smoothing, tokens: &[u32]) -> f64 {
+        let mut rules_smoothed = HashMap::<&String, f64>::new();
+
+        for r_set in &self.rule_set {
+            let rule = NGramTrie::_preprocess_rule_context(tokens, Some(&r_set));
+            rules_smoothed.insert(r_set, smoothing.smoothing(&self, &rule));
+        }
+
+        println!("{:?}", rules_smoothed.values());
         //TODO
-        smoothing.smoothing(self, rule)
+        0.0
     }
 
     fn fit(tokens: Arc<Vec<u32>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
@@ -462,53 +510,16 @@ fn run_performance_tests(filename: &str) {
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
 
-fn calculate_ruleset(n_gram_max_length: u32) -> Vec<String> {
-    if n_gram_max_length == 1 {
-        return vec!["+".to_string(), "-".to_string()];
-    }
-    let mut ruleset = Vec::<String>::new();
-    ruleset.extend(calculate_ruleset(n_gram_max_length - 1));
-
-    let characters = vec!["+", "*", "-"];
-    
-    let mut combinations : Vec<String> = (2..n_gram_max_length).fold(
-        characters.iter().map(|c| characters.iter().map(move |&d| d.to_owned() + *c)).flatten().collect(),
-        |acc,_| acc.into_iter().map(|c| characters.iter().map(move |&d| d.to_owned() + &*c)).flatten().collect()
-    );
-
-    combinations.retain(|comb| comb.starts_with('+'));
-
-    let mut tokens = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".to_string();
-    tokens.truncate(n_gram_max_length as usize);
-    let mut hashmap = HashMap::<String, String>::new();
-
-    for comb in combinations {
-        let mut key = "".to_string();
-        for (token, rule) in tokens.chars().zip(comb.chars()) {
-            match rule {
-                '*' => key += "*",
-                '-' => continue,
-                _ => key += &token.to_string(),
-            }
-        }
-        hashmap.insert(key, comb);
-    }
-
-    ruleset.extend(hashmap.values().cloned());
-
-    ruleset
-}
-
 fn main() {
     let filename = "/home/boti/Desktop/ngram-llm-analysis/data/cleaned_tokenized_data.json";
     //run_performance_tests(filename);
 
     for i in 1..8 {
-        let all = calculate_ruleset(i);
+        let all = NGramTrie::_calculate_ruleset(i);
         println!("{}-gram rule size: {}", i, all.len())
     }
 
-    println!("{:?}", calculate_ruleset(7));
+    println!("{:?}", NGramTrie::_calculate_ruleset(7));
 
 
     let x = 370_000_000;
