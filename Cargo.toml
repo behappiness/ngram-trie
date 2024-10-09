@@ -15,3 +15,4 @@ rayon = "1.10.0"
 actix-web = "4.9"
 tqdm = "0.7"
 tokio = { version = "1.40.0", features = ["full"] }
+boomphf = "0.6.0"

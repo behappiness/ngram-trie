@@ -71,19 +71,6 @@ impl NGramTrie {
         mem::size_of::<NGramTrie>() + self.root.size_in_ram_recursive()
     }
 
-    #[deprecated]
-    pub fn size_in_ram(&self) -> usize {
-        let mut total_size = mem::size_of::<NGramTrie>();
-        let mut stack = vec![self.root.as_ref()];
-        while let Some(node) = stack.pop() {
-            total_size += mem::size_of::<TrieNode>() + node.children.capacity() * mem::size_of::<(u16, Box<TrieNode>)>();
-            for child in node.children.values() {
-                stack.push(child);
-            }
-        }
-        total_size
-    }
-
     pub fn save(&self, filename: &str) -> std::io::Result<()> {
         println!("----- Saving trie -----");
         let start = Instant::now();
@@ -214,7 +201,7 @@ impl NGramTrie {
 
     pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
         println!("----- Trie fitting -----");
-        let x = tokens.len() as f64; //450_000_000;
+        let x = max_tokens.unwrap_or(tokens.len()) as f64;
         let y = 0.0017 * x.powf(0.8814);
         let _x = (y / 0.0017).powf(1.0 / 0.8814) as f64;
         let t = (0.000003 * x - 0.533) / 60.0;

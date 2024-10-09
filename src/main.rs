@@ -54,11 +54,12 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
 }
 
 fn run_performance_tests(filename: &str) {
+    println!("----- Starting performance tests -----");
     let tokens = NGramTrie::load_json(filename, Some(100_000_000)).unwrap();
     println!("Tokens loaded: {}", tokens.len());
     let data_sizes = (1..10).map(|x| x * 1_000_000).chain((1..=10).map(|x| x * 10_000_000)).collect::<Vec<_>>();
-    let n_gram_lengths = [3, 4, 5, 6, 7].to_vec();
-    let output_file = "fit_performance.csv";
+    let n_gram_lengths = [7].to_vec();
+    let output_file = "fit_performance_btreemap.csv";
 
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
@@ -86,17 +87,26 @@ async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> std::io::Result<()> { //
+    // run_performance_tests("tokens.json");
     let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
 
     let mut trie = NGramTrie::fit(tokens, 7, None);
-    
+
     trie.save("trie.bin");
 
     trie.set_rule_set(vec!["++++++".to_string()]);
 
     let smoothing = ModifiedBackoffKneserNey::new(&trie);
     println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", smoothing.d1, smoothing.d2, smoothing.d3, smoothing.uniform);
+
+    println!("----- Getting rule count -----");
+    let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740,], Some("++*+***"));
+    let start = Instant::now();
+    let count = trie.get_count(&rule);
+    let elapsed = start.elapsed();
+    println!("Count: {}", count);
+    println!("Time taken: {:?}", elapsed);
 
     let trie = Arc::new(trie);
     let smoothing = Arc::new(smoothing);

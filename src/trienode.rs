@@ -1,6 +1,9 @@
 use fxhash::FxHashMap;
 use serde::{Serialize, Deserialize};
 use std::mem;
+use hashbrown::HashMap;
+use std::collections::BTreeMap;
+use boomphf::hashmap::BoomHashMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TrieNode {
