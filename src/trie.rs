@@ -199,14 +199,20 @@ impl NGramTrie {
         prediction_probabilities
     }
 
+    pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
+        let x = tokens_size as f64;
+        let y = 0.0021 * x.powf(0.8525);
+        let _x = (y / 0.0021).powf(1.0 / 0.8525) as f64; //how many can be fit in RAM
+        let t = (2.8072 * x / 1_000_000.0 - 0.124) / 60.0; //how long it will take to fit
+        (t, y)
+    }
+    
     pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
         println!("----- Trie fitting -----");
-        let x = max_tokens.unwrap_or(tokens.len()) as f64;
-        let y = 0.0017 * x.powf(0.8814);
-        let _x = (y / 0.0017).powf(1.0 / 0.8814) as f64;
-        let t = (0.000003 * x - 0.533) / 60.0;
-        println!("Expected time for {} tokens: {} min", x, t);
-        println!("Expected ram usage for {} tokens: {} MB", x, y);
+        let tokens_size = max_tokens.unwrap_or(tokens.len());
+        let (t, y) = NGramTrie::estimate_time_and_ram(tokens_size);
+        println!("Expected time for {} tokens: {} min", tokens_size, t);
+        println!("Expected ram usage for {} tokens: {} MB", tokens_size, y);
         let start = Instant::now();
         let mut trie = NGramTrie::new(n_gram_max_length);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());

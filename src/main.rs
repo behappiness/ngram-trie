@@ -21,7 +21,7 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
         .open(output_file)
         .unwrap();
 
-    writeln!(file, "Data Size,N-gram Length,Fit Time (ms),RAM Usage (MB)").unwrap();
+    writeln!(file, "Data Size,N-gram Length,Fit Time (s),RAM Usage (MB)").unwrap();
 
     let num_threads = std::thread::available_parallelism()
         .map(|p| p.get()).unwrap_or(1);
@@ -59,7 +59,7 @@ fn run_performance_tests(filename: &str) {
     println!("Tokens loaded: {}", tokens.len());
     let data_sizes = (1..10).map(|x| x * 1_000_000).chain((1..=10).map(|x| x * 10_000_000)).collect::<Vec<_>>();
     let n_gram_lengths = [7].to_vec();
-    let output_file = "fit_performance_btreemap.csv";
+    let output_file = "fit_performance_fxhashmap.csv";
 
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
@@ -89,6 +89,10 @@ async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<
 #[tokio::main]
 async fn main() -> std::io::Result<()> { //
     // run_performance_tests("tokens.json");
+    let (time, ram) = NGramTrie::estimate_time_and_ram(450_000_000);
+    println!("Estimated time: {} min", time);
+    println!("Estimated RAM: {} MB", ram);
+
     let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
 
     let mut trie = NGramTrie::fit(tokens, 7, None);
