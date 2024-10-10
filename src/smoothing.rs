@@ -33,7 +33,7 @@ impl ModifiedBackoffKneserNey {
         for i in 1..=trie.n_gram_max_length {
             let rule: Vec<Option<u16>> = vec![None; i as usize];
             for node in trie.find_all_nodes(&rule) {
-                match node.count {
+                match node.0 {
                     1 => n1 += 1,
                     2 => n2 += 1,
                     3 => n3 += 1,
@@ -60,8 +60,8 @@ impl ModifiedBackoffKneserNey {
         let mut n2 = HashSet::<u16>::new();
         let mut n3 = HashSet::<u16>::new();
         for node in trie.find_all_nodes(&rule) {
-            for (key, child) in &node.children {
-                match child.count {
+            for (key, child) in &node.1.children {
+                match child.0 {
                     1 => { n1.insert(*key); },
                     2 => { n2.insert(*key); },
                     _ => { n3.insert(*key); }

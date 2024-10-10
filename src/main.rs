@@ -59,7 +59,7 @@ fn run_performance_tests(filename: &str) {
     println!("Tokens loaded: {}", tokens.len());
     let data_sizes = (1..10).map(|x| x * 1_000_000).chain((1..=10).map(|x| x * 10_000_000)).collect::<Vec<_>>();
     let n_gram_lengths = [7].to_vec();
-    let output_file = "fit_performance_sorted_vector_map.csv";
+    let output_file = "fit_performance_revised_trie_sorted_vector_map.csv";
 
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }

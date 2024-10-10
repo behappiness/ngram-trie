@@ -14,6 +14,7 @@ use hashbrown::{HashMap, HashSet};
 #[derive(Serialize, Deserialize, Clone)]
 pub struct NGramTrie {
     pub root: Box<TrieNode>,
+    pub count: u32,
     pub n_gram_max_length: u32,
     pub rule_set: Vec<String>
 }
@@ -22,7 +23,8 @@ impl NGramTrie {
     pub fn new(n_gram_max_length: u32) -> Self {
         let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length - 1);
         NGramTrie {
-            root: Box::new(TrieNode::new()),
+            root: Box::new(TrieNode::new(Some(2_usize.pow(12)))),
+            count: 0,
             n_gram_max_length,
             rule_set: _rule_set
         }
@@ -30,40 +32,14 @@ impl NGramTrie {
 
     //better to use this as it is simle, maybe even faster
     pub fn insert_recursive(&mut self, n_gram: &[u16]) {
+        self.count += 1;
         self.root.insert_recursive(n_gram);
     }
     
-    #[deprecated]
-    pub fn insert(&mut self, n_gram: &[u16]) {
-        let mut current_node = &mut self.root;
-        current_node.count += 1;
-        for i in 0..n_gram.len() {
-            current_node = current_node.children.entry(n_gram[i]).or_insert_with(|| Box::new(TrieNode::new()));
-            current_node.count += 1;
-        }
-    }
-
     //better to use this as it is simle
     pub fn merge_recursive(&mut self, other: &NGramTrie) {
+        self.count += other.count;
         self.root.merge_recursive(&other.root);
-    }
-
-    #[deprecated] //cant really work
-    pub fn merge_shit(&mut self, other: &NGramTrie) {
-        let mut stack = vec![(self.root.as_mut() as *mut TrieNode, other.root.as_ref() as *const TrieNode)];
-
-        unsafe {
-            while let Some((self_node_ptr, other_node_ptr)) = stack.pop() {
-                let self_node = &mut *self_node_ptr;
-                let other_node = &*other_node_ptr;
-
-                for (key, other_child) in &other_node.children {
-                    let self_child = self_node.children.entry(*key).or_insert_with(|| Box::new(TrieNode::new()));
-                    self_child.count += other_child.count;
-                    stack.push((self_child.as_mut() as *mut TrieNode, other_child.as_ref() as *const TrieNode));
-                }
-            }
-        }
     }
 
     //better to use size_in_ram, faster by 7-10%
@@ -167,14 +143,14 @@ impl NGramTrie {
     }
 
     //TODO: merge with unique_continuation_count?
-    pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<&TrieNode> {
+    pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<(u32, &TrieNode)> {
         self.root.find_all_nodes(rule)
     }
 
     pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
         let mut unique = HashSet::<u16>::new();
         for node in self.find_all_nodes(rule) {
-            unique.extend(node.children.keys());
+            unique.extend(node.1.children.keys());
         }
         unique
     }
