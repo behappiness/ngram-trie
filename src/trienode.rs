@@ -9,7 +9,7 @@ use sorted_vector_map::SortedVectorMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TrieNode {
-    pub children: SortedVectorMap<u16, (u32, TrieNode)>
+    pub children: SortedVectorMap<u16, (u32, Box<TrieNode>)>
 }
 
 impl TrieNode {
@@ -23,7 +23,7 @@ impl TrieNode {
         for (char, other_child) in &other.children {
             let child = self.children
                 .entry(*char)
-                .or_insert_with(|| (0, TrieNode::new(Some(other_child.1.children.capacity()))));
+                .or_insert_with(|| (0, Box::new(TrieNode::new(Some(other_child.1.children.capacity())))));
             child.0 += other_child.0;
             child.1.merge_recursive(&other_child.1);
         }
@@ -33,13 +33,13 @@ impl TrieNode {
         if n_gram.len() == 1 { 
             let child = self.children
             .entry(n_gram[0])
-            .or_insert_with(|| (0, TrieNode::new(None))); //leaf node has 0 children
+            .or_insert_with(|| (0, Box::new(TrieNode::new(None)))); //leaf node has 0 children
         child.0 += 1;
         return; 
         }
         let child = self.children
             .entry(n_gram[0])
-            .or_insert_with(|| (0, TrieNode::new(None))); //TODO: fine tune? 2_usize.pow(8)
+            .or_insert_with(|| (0, Box::new(TrieNode::new(None)))); //TODO: fine tune? 2_usize.pow(8)
         child.0 += 1;
         child.1.insert_recursive(&n_gram[1..]);
     }
