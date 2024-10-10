@@ -44,7 +44,7 @@ impl TrieNode {
             _ => {
                 self.children
                 .entry(n_gram[0])
-                .or_insert_with(|| Box::new(TrieNode::new(Some(2_usize.pow(5)))))//2^5 is the default capacity of a TrieNode
+                .or_insert_with(|| Box::new(TrieNode::new(None)))//2^5 is the default capacity of a TrieNode
                 .insert(&n_gram[1..]);
             }
         }
