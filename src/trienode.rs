@@ -4,17 +4,19 @@ use std::mem;
 use hashbrown::HashMap;
 use std::collections::BTreeMap;
 use boomphf::hashmap::BoomHashMap;
+use sorted_vector_map::SortedVectorMap;
+
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TrieNode {
-    pub children: FxHashMap<u16, Box<TrieNode>>, // changed from u32 to u16
+    pub children: SortedVectorMap<u16, Box<TrieNode>>, // changed from u32 to u16
     pub count: u32
 }
 
 impl TrieNode {
     pub fn new() -> Self {
         TrieNode {
-            children: FxHashMap::default(),
+            children: SortedVectorMap::new(),
             count: 0,
         }
     }
@@ -45,6 +47,13 @@ impl TrieNode {
             size += child.size_in_ram_recursive();
         }
         size
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.children.shrink_to_fit();
+        for child in self.children.values_mut() {
+            child.shrink_to_fit();
+        }
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<&TrieNode> { // changed from &[Option<u32>] to &[Option<u16>]

@@ -71,6 +71,10 @@ impl NGramTrie {
         mem::size_of::<NGramTrie>() + self.root.size_in_ram_recursive()
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.root.shrink_to_fit();
+    }
+
     pub fn save(&self, filename: &str) -> std::io::Result<()> {
         println!("----- Saving trie -----");
         let start = Instant::now();
@@ -221,6 +225,7 @@ impl NGramTrie {
         }
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
+        trie.shrink_to_fit();
         println!("Size of trie in RAM: {} MB", trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0));
         trie
     }
