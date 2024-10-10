@@ -1,3 +1,4 @@
+#![allow(warnings)]
 mod trienode;
 mod trie;
 mod smoothing;
@@ -100,7 +101,7 @@ async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffK
     .await
 }
 
-fn main() { //
+fn main() {
     run_performance_tests("tokens.json");
     NGramTrie::estimate_time_and_ram(475_000_000);
     
