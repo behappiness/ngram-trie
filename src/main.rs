@@ -93,11 +93,20 @@ async fn main() -> std::io::Result<()> { //
     println!("Estimated time: {} min", time);
     println!("Estimated RAM: {} MB", ram);
 
-    let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
+    // let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
 
-    let mut trie = NGramTrie::fit(tokens, 7, None);
+    // let mut trie = NGramTrie::fit(tokens, 7, None);
 
-    trie.save("../trie_7_475m.bin");
+    // trie.save("../trie_7_475m.bin");
+
+    let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
+
+    let ram = trie.size_in_ram_recursive();
+    println!("Size in RAM after loading: {:?}", ram);
+
+    trie.shrink_to_fit();
+    let ram = trie.size_in_ram_recursive();
+    println!("Size in RAM after shrinking: {:?}", ram);
 
     trie.set_rule_set(vec!["++++++".to_string()]);
 
