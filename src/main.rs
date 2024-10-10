@@ -87,42 +87,42 @@ async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<
 }
 
 #[tokio::main]
-async fn main()  { //-> std::io::Result<()>
-    run_performance_tests("tokens.json");
-    // let (time, ram) = NGramTrie::estimate_time_and_ram(450_000_000);
-    // println!("Estimated time: {} min", time);
-    // println!("Estimated RAM: {} MB", ram);
+async fn main() -> std::io::Result<()> { //
+    //run_performance_tests("tokens.json");
+    let (time, ram) = NGramTrie::estimate_time_and_ram(475_000_000);
+    println!("Estimated time: {} min", time);
+    println!("Estimated RAM: {} MB", ram);
 
-    // let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
+    let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
 
-    // let mut trie = NGramTrie::fit(tokens, 7, None);
+    let mut trie = NGramTrie::fit(tokens, 7, None);
 
-    // trie.save("trie.bin");
+    trie.save("../trie_7_475m.bin");
 
-    // trie.set_rule_set(vec!["++++++".to_string()]);
+    trie.set_rule_set(vec!["++++++".to_string()]);
 
-    // let smoothing = ModifiedBackoffKneserNey::new(&trie);
-    // println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", smoothing.d1, smoothing.d2, smoothing.d3, smoothing.uniform);
+    let smoothing = ModifiedBackoffKneserNey::new(&trie);
+    println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", smoothing.d1, smoothing.d2, smoothing.d3, smoothing.uniform);
 
-    // println!("----- Getting rule count -----");
-    // let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740,], Some("++*+***"));
-    // let start = Instant::now();
-    // let count = trie.get_count(&rule);
-    // let elapsed = start.elapsed();
-    // println!("Count: {}", count);
-    // println!("Time taken: {:?}", elapsed);
+    println!("----- Getting rule count -----");
+    let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740,], Some("++*+***"));
+    let start = Instant::now();
+    let count = trie.get_count(&rule);
+    let elapsed = start.elapsed();
+    println!("Count: {}", count);
+    println!("Time taken: {:?}", elapsed);
 
-    // let trie = Arc::new(trie);
-    // let smoothing = Arc::new(smoothing);
+    let trie = Arc::new(trie);
+    let smoothing = Arc::new(smoothing);
 
-    // println!("----- Starting HTTP server -----");
-    // HttpServer::new(move || {
-    //     App::new()
-    //         .app_data(trie.clone())
-    //         .app_data(smoothing.clone())
-    //         .service(web::resource("/predict").route(web::post().to(predict_probability)))
-    // })
-    // .bind("127.0.0.1:8080")?
-    // .run()
-    // .await
+    println!("----- Starting HTTP server -----");
+    HttpServer::new(move || {
+        App::new()
+            .app_data(trie.clone())
+            .app_data(smoothing.clone())
+            .service(web::resource("/predict").route(web::post().to(predict_probability)))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
 }
