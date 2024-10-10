@@ -33,16 +33,20 @@ impl TrieNode {
 
     pub fn insert(&mut self, n_gram: &[u16]) { // changed from &[u32] to &[u16]
         self.count += 1;
-        if n_gram.len() == 1 { 
-            self.children
-            .entry(n_gram[0])
-            .or_insert_with(|| Box::new(TrieNode::new(None)))
-            .insert(&n_gram[1..]);
-        } else {
-            self.children
-            .entry(n_gram[0])
-            .or_insert_with(|| Box::new(TrieNode::new(Some(2_usize.pow(5)))))//2^5 is the default capacity of a TrieNode
-            .insert(&n_gram[1..]);
+        match n_gram.len() {
+            0 => return,
+            1 => {
+                self.children
+                .entry(n_gram[0])
+                .or_insert_with(|| Box::new(TrieNode::new(None)))
+                .insert(&n_gram[1..]);
+            },
+            _ => {
+                self.children
+                .entry(n_gram[0])
+                .or_insert_with(|| Box::new(TrieNode::new(Some(2_usize.pow(5)))))//2^5 is the default capacity of a TrieNode
+                .insert(&n_gram[1..]);
+            }
         }
     }
 

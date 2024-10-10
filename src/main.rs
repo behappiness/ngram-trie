@@ -59,7 +59,7 @@ fn run_performance_tests(filename: &str) {
     println!("Tokens loaded: {}", tokens.len());
     let data_sizes = (1..10).map(|x| x * 1_000_000).chain((1..=10).map(|x| x * 10_000_000)).collect::<Vec<_>>();
     let n_gram_lengths = [7].to_vec();
-    let output_file = "fit_performance_sorted_vector_map.csv";
+    let output_file = "fit_sorted_vector_map_with_box.csv";
 
     test_performance_and_write_stats(tokens, data_sizes, n_gram_lengths, output_file);
 }
@@ -101,7 +101,7 @@ async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffK
 }
 
 fn main() { //
-    //run_performance_tests("tokens.json");
+    run_performance_tests("tokens.json");
     NGramTrie::estimate_time_and_ram(475_000_000);
     
     let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
