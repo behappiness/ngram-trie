@@ -19,60 +19,40 @@ pub struct NGramTrie {
 }
 
 impl NGramTrie {
-    pub fn new(n_gram_max_length: u32) -> Self {
+    pub fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
         let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length - 1);
         NGramTrie {
-            root: Box::new(TrieNode::new()),
+            root: Box::new(TrieNode::new(root_capacity)),
             n_gram_max_length,
             rule_set: _rule_set
         }
     }
 
     //better to use this as it is simle, maybe even faster
-    pub fn insert_recursive(&mut self, n_gram: &[u16]) {
-        self.root.insert_recursive(n_gram);
-    }
-    
-    #[deprecated]
     pub fn insert(&mut self, n_gram: &[u16]) {
-        let mut current_node = &mut self.root;
-        current_node.count += 1;
-        for i in 0..n_gram.len() {
-            current_node = current_node.children.entry(n_gram[i]).or_insert_with(|| Box::new(TrieNode::new()));
-            current_node.count += 1;
-        }
+        self.root.insert(n_gram);
     }
 
-    //better to use this as it is simle
-    pub fn merge_recursive(&mut self, other: &NGramTrie) {
-        self.root.merge_recursive(&other.root);
+    pub fn merge(&mut self, other: &NGramTrie) {
+        self.root.merge(&other.root);
     }
 
-    #[deprecated] //cant really work
-    pub fn merge_shit(&mut self, other: &NGramTrie) {
-        let mut stack = vec![(self.root.as_mut() as *mut TrieNode, other.root.as_ref() as *const TrieNode)];
-
-        unsafe {
-            while let Some((self_node_ptr, other_node_ptr)) = stack.pop() {
-                let self_node = &mut *self_node_ptr;
-                let other_node = &*other_node_ptr;
-
-                for (key, other_child) in &other_node.children {
-                    let self_child = self_node.children.entry(*key).or_insert_with(|| Box::new(TrieNode::new()));
-                    self_child.count += other_child.count;
-                    stack.push((self_child.as_mut() as *mut TrieNode, other_child.as_ref() as *const TrieNode));
-                }
-            }
-        }
-    }
-
-    //better to use size_in_ram, faster by 7-10%
-    pub fn size_in_ram_recursive(&self) -> usize {
-        mem::size_of::<NGramTrie>() + self.root.size_in_ram_recursive()
+    pub fn size_in_ram(&self) -> usize {
+        println!("----- Calculating size in RAM -----");
+        let start = Instant::now();
+        let size = mem::size_of::<NGramTrie>() + self.root.size_in_ram();
+        let duration = start.elapsed();
+        println!("Time taken to calculate size in RAM: {:?}", duration);
+        println!("Size in RAM: {} MB", size as f64 / (1024.0 * 1024.0));
+        size
     }
 
     pub fn shrink_to_fit(&mut self) {
+        println!("----- Shrinking to fit -----");
+        let start = Instant::now();
         self.root.shrink_to_fit();
+        let duration = start.elapsed();
+        println!("Time taken to shrink to fit: {:?}", duration);
     }
 
     pub fn save(&self, filename: &str) -> std::io::Result<()> {
@@ -97,7 +77,7 @@ impl NGramTrie {
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         println!("Time taken to load trie: {:?}", duration);
-        println!("Size of loaded trie in RAM: {} MB", trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0));
+        trie.size_in_ram();
         Ok(trie)
     }
 
@@ -193,12 +173,17 @@ impl NGramTrie {
     }
 
     pub fn get_prediction_probabilities(&self, smoothing: &impl Smoothing, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
+        println!("----- Getting prediction probabilities -----");
+        let start = Instant::now();
         let mut prediction_probabilities = Vec::<(u16, Vec<(String, f64)>)>::new();
 
-        for token in self.root.children.keys() {
+        for token in tqdm(self.root.children.keys()) {
             let probabilities = self.probability_for_token(smoothing, history, *token);
             prediction_probabilities.push((*token, probabilities));
         }
+
+        let duration = start.elapsed();
+        println!("Time taken to get prediction probabilities: {:?}", duration);
 
         prediction_probabilities
     }
@@ -208,30 +193,30 @@ impl NGramTrie {
         let y = 0.0021 * x.powf(0.8525);
         let _x = (y / 0.0021).powf(1.0 / 0.8525) as f64; //how many can be fit in RAM
         let t = (2.8072 * x / 1_000_000.0 - 0.124) / 60.0; //how long it will take to fit
+        println!("Expected time for {} tokens: {} min", tokens_size, t);
+        println!("Expected ram usage for {} tokens: {} MB", tokens_size, y);
         (t, y)
     }
     
-    pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, max_tokens: Option<usize>) -> Self {
+    pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
         println!("----- Trie fitting -----");
         let tokens_size = max_tokens.unwrap_or(tokens.len());
-        let (t, y) = NGramTrie::estimate_time_and_ram(tokens_size);
-        println!("Expected time for {} tokens: {} min", tokens_size, t);
-        println!("Expected ram usage for {} tokens: {} MB", tokens_size, y);
-        let start = Instant::now();
-        let mut trie = NGramTrie::new(n_gram_max_length);
+        NGramTrie::estimate_time_and_ram(tokens_size);
+        let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
+        let start = Instant::now();
         for i in tqdm(0..max_tokens - n_gram_max_length as usize + 1) {
-            trie.insert_recursive(&tokens[i..i + n_gram_max_length as usize]);
+            trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
-        trie.shrink_to_fit();
-        println!("Size of trie in RAM: {} MB", trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0));
+        trie.size_in_ram();
         trie
     }
 
-    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32) -> Self {
-        let mut trie = NGramTrie::new(n_gram_max_length);
+    #[deprecated]
+    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
+        let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
 
         let mut handles = vec![];
 
@@ -243,7 +228,7 @@ impl NGramTrie {
             let handle = std::thread::spawn(move || {
                 for i in range.start..range.end - n_gram_max_length as usize + 1 {
                     let n_gram = &_tokens[i..i + n_gram_max_length as usize];
-                    trie_clone.insert_recursive(n_gram);
+                    trie_clone.insert(n_gram);
                 }
                 trie_clone
             });
@@ -253,12 +238,13 @@ impl NGramTrie {
 
         for handle in handles {
             let partial_trie = handle.join().unwrap();
-            trie.merge_recursive(&partial_trie);
+            trie.merge(&partial_trie);
         }
         trie
     }
 
-    pub fn fit_multithreaded_recursively(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32) -> Self {
+    #[deprecated]
+    pub fn fit_multithreaded_recursively(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
         if ranges.len() > 1 {
             let mid = ranges.len() / 2;
             let left = ranges[..mid].to_vec();
@@ -266,18 +252,18 @@ impl NGramTrie {
             // Recursively process both halves
             let right_clone = tokens.clone();
             let handle = std::thread::spawn(move || {
-                NGramTrie::fit_multithreaded_recursively(right_clone, right, n_gram_max_length)
+                NGramTrie::fit_multithreaded_recursively(right_clone, right, n_gram_max_length, root_capacity)
             });
-            let mut left_trie = NGramTrie::fit_multithreaded_recursively(tokens, left, n_gram_max_length);
+            let mut left_trie = NGramTrie::fit_multithreaded_recursively(tokens, left, n_gram_max_length, root_capacity);
             let right_trie = handle.join().unwrap();
-            left_trie.merge_recursive(&right_trie);
+            left_trie.merge(&right_trie);
             left_trie
         } else {
-            let mut trie = NGramTrie::new(n_gram_max_length);
+            let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
             let range = &ranges[0];
             for i in range.start..range.end - n_gram_max_length as usize + 1 {
                 let n_gram = &tokens[i..i + n_gram_max_length as usize];
-                trie.insert_recursive(n_gram);
+                trie.insert(n_gram);
             }
             trie
         }
@@ -302,6 +288,7 @@ impl NGramTrie {
         Ok(Arc::new(tokens))
     }
     
+    #[deprecated]
     pub fn split_into_ranges(tokens: Arc<Vec<u16>>, max_tokens: usize, number_of_chunks: usize, n_gram_max_length: u32) -> Vec<Range<usize>> {
         let mut ranges = Vec::new();
         let max_tokens = std::cmp::min(max_tokens, tokens.len());

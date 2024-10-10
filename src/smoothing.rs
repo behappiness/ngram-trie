@@ -1,5 +1,7 @@
 use crate::trie::NGramTrie;
 use hashbrown::HashSet;
+use tqdm::tqdm;
+use std::time::Instant;
 
 pub trait Smoothing: Clone{
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64;
@@ -15,24 +17,25 @@ pub struct ModifiedBackoffKneserNey {
 
 impl ModifiedBackoffKneserNey {
     pub fn new(trie: &NGramTrie) -> Self {
-        let (_d1, _d2, _d3) = Self::calculate_d_values(trie);
-        let uniform = 1.0 / trie.root.children.len() as f64;
+        let (_d1, _d2, _d3, _uniform) = Self::calculate_d_values(trie);
         ModifiedBackoffKneserNey {
             d1: _d1,
             d2: _d2,
             d3: _d3,
-            uniform: uniform
+            uniform: _uniform
         }
     }
 
-    pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64) {
+    pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64, f64) {
+        println!("----- Calculating d values -----");
+        let start = Instant::now();
         let mut n1: u32 = 0;
         let mut n2: u32 = 0;
         let mut n3: u32 = 0;
         let mut n4: u32 = 0;
-        for i in 1..=trie.n_gram_max_length {
+        for i in tqdm(1..=trie.n_gram_max_length) {
             let rule: Vec<Option<u16>> = vec![None; i as usize];
-            for node in trie.find_all_nodes(&rule) {
+            for node in tqdm(trie.find_all_nodes(&rule)) {
                 match node.count {
                     1 => n1 += 1,
                     2 => n2 += 1,
@@ -43,15 +46,20 @@ impl ModifiedBackoffKneserNey {
             }
         }
 
+        let uniform = 1.0 / trie.root.children.len() as f64;
+
         if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {
-            return (0.1, 0.2, 0.3);
+            return (0.1, 0.2, 0.3, uniform);
         }
 
         let y = n1 as f64 / (n1 + 2 * n2) as f64;
         let d1 = 1.0 - 2.0 * y * (n2 as f64 / n1 as f64);
         let d2 = 2.0 - 3.0 * y * (n3 as f64 / n2 as f64);
         let d3 = 3.0 - 4.0 * y * (n4 as f64 / n3 as f64);
-        (d1, d2, d3)
+        let elapsed = start.elapsed();
+        println!("Time taken: {:?}", elapsed);
+        println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", d1, d2, d3, uniform);
+        (d1, d2, d3, uniform)
     }
 
     //TODO: Cache

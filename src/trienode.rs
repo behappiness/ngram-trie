@@ -14,46 +14,53 @@ pub struct TrieNode {
 }
 
 impl TrieNode {
-    pub fn new() -> Self {
+    pub fn new(capacity: Option<usize>) -> Self {
         TrieNode {
-            children: SortedVectorMap::new(),
+            children: SortedVectorMap::with_capacity(capacity.unwrap_or(0)),
             count: 0,
         }
     }
 
-    pub fn merge_recursive(&mut self, other: &TrieNode) {
+    pub fn merge(&mut self, other: &TrieNode) {
         self.count += other.count;
         for (char, other_child) in &other.children {
             self.children
                 .entry(*char)
-                .or_insert_with(|| Box::new(TrieNode::new()))
-                .merge_recursive(other_child);
+                .or_insert_with(|| Box::new(TrieNode::new(Some(other.children.len()))))
+                .merge(other_child);
         }
     }
 
-    pub fn insert_recursive(&mut self, n_gram: &[u16]) { // changed from &[u32] to &[u16]
+    pub fn insert(&mut self, n_gram: &[u16]) { // changed from &[u32] to &[u16]
         self.count += 1;
-        if n_gram.len() == 0 { return; }
-        self.children
+        if n_gram.len() == 1 { 
+            self.children
             .entry(n_gram[0])
-            .or_insert_with(|| Box::new(TrieNode::new()))
-            .insert_recursive(&n_gram[1..]);
+            .or_insert_with(|| Box::new(TrieNode::new(None)))
+            .insert(&n_gram[1..]);
+        } else {
+            self.children
+            .entry(n_gram[0])
+            .or_insert_with(|| Box::new(TrieNode::new(Some(2_usize.pow(5)))))//2^5 is the default capacity of a TrieNode
+            .insert(&n_gram[1..]);
+        }
     }
 
-    pub fn size_in_ram_recursive(&self) -> usize {
+    pub fn size_in_ram(&self) -> usize {
         let mut size = mem::size_of::<TrieNode>();
         size += self.children.capacity() * mem::size_of::<(u16, Box<TrieNode>)>(); // changed from u32 to u16
         for child in self.children.values() {
-            size += child.size_in_ram_recursive();
+            size += child.size_in_ram();
         }
         size
     }
 
+    /// Shrinks the children vector to fit the number of elements. Starting from the leaf nodes.
     pub fn shrink_to_fit(&mut self) {
-        self.children.shrink_to_fit();
         for child in self.children.values_mut() {
             child.shrink_to_fit();
         }
+        self.children.shrink_to_fit();
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<&TrieNode> { // changed from &[Option<u32>] to &[Option<u16>]

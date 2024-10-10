@@ -33,10 +33,10 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
             let start = Instant::now();
             //let trie = NGramTrie::fit_multithreaded(tokens.clone(), ranges, *n_gram_length);
             //let trie = NGramTrie::fit_multithreaded_recursively(tokens.clone(), ranges, *n_gram_length);
-            let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, Some(data_size));
+            let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, None,Some(data_size));
             let fit_time = start.elapsed().as_secs_f64(); 
             // Measure RAM usage
-            let ram_usage = trie.size_in_ram_recursive() as f64 / (1024.0 * 1024.0);
+            let ram_usage = trie.size_in_ram() as f64 / (1024.0 * 1024.0);
 
             // Write statistics to file
             writeln!(
@@ -87,31 +87,39 @@ async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> { //
+async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffKneserNey>) -> std::io::Result<()> {
+    println!("----- Starting HTTP server -----");
+    HttpServer::new(move || {
+        App::new()
+            .app_data(trie.clone())
+            .app_data(smoothing.clone())
+            .service(web::resource("/predict").route(web::post().to(predict_probability)))
+    })
+    .bind("127.0.0.1:8080")?
+    .run()
+    .await
+}
+
+fn main() { //
     //run_performance_tests("tokens.json");
-    let (time, ram) = NGramTrie::estimate_time_and_ram(475_000_000);
-    println!("Estimated time: {} min", time);
-    println!("Estimated RAM: {} MB", ram);
+    NGramTrie::estimate_time_and_ram(475_000_000);
+    
+    let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
 
-    // let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
+    let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
 
-    // let mut trie = NGramTrie::fit(tokens, 7, None);
+    trie.save("../trie_7_475m.bin");
 
-    // trie.save("../trie_7_475m.bin");
+    //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
 
-    let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
-
-    let ram = trie.size_in_ram_recursive();
-    println!("Size in RAM after loading: {:?}", ram);
-
+    trie.size_in_ram();
     trie.shrink_to_fit();
-    let ram = trie.size_in_ram_recursive();
-    println!("Size in RAM after shrinking: {:?}", ram);
+    trie.size_in_ram();
 
     trie.set_rule_set(vec!["++++++".to_string()]);
 
     let smoothing = ModifiedBackoffKneserNey::new(&trie);
-    println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", smoothing.d1, smoothing.d2, smoothing.d3, smoothing.uniform);
+    
 
     println!("----- Getting rule count -----");
     let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740,], Some("++*+***"));
@@ -124,14 +132,5 @@ async fn main() -> std::io::Result<()> { //
     let trie = Arc::new(trie);
     let smoothing = Arc::new(smoothing);
 
-    println!("----- Starting HTTP server -----");
-    HttpServer::new(move || {
-        App::new()
-            .app_data(trie.clone())
-            .app_data(smoothing.clone())
-            .service(web::resource("/predict").route(web::post().to(predict_probability)))
-    })
-    .bind("127.0.0.1:8080")?
-    .run()
-    .await
+    
 }
