@@ -33,13 +33,13 @@ impl TrieNode {
         if n_gram.len() == 1 { 
             let child = self.children
             .entry(n_gram[0])
-            .or_insert_with(|| (0, TrieNode::new(Some(0)))); //leaf node has 0 children
+            .or_insert_with(|| (0, TrieNode::new(None))); //leaf node has 0 children
         child.0 += 1;
         return; 
         }
         let child = self.children
             .entry(n_gram[0])
-            .or_insert_with(|| (0, TrieNode::new(Some(2_usize.pow(8))))); //TODO: fine tune?
+            .or_insert_with(|| (0, TrieNode::new(None))); //TODO: fine tune? 2_usize.pow(8)
         child.0 += 1;
         child.1.insert_recursive(&n_gram[1..]);
     }
