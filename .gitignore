@@ -1,3 +1,4 @@
 /target
 /src/.ipynb_checkpoints
-Cargo.lock
+/.vscode
+/Cargo.lock
