@@ -1,1 +1,3 @@
 /target
+/src/.ipynb_checkpoints
+Cargo.lock
