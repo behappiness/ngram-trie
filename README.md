@@ -2,7 +2,7 @@
 
 `ngram-trie` is a Rust library designed to efficiently handle n-gram data structures using a trie-based approach. It provides functionalities for fitting, saving, loading, and querying n-gram models, with support for various smoothing techniques.
 
-## Installation
+## Installation Rust
 
 1. Clone the required repositories:
 
@@ -10,15 +10,17 @@
     git clone https://github.com/behappiness/ngram-trie
     ```
 
-2. Install `maturin`:
+2. Include it in the Cargo.toml:
 
-    ```bash
-    pip install maturin
+    ```toml
+    [dependencies]
+    ngram-trie = { path = "path/to/ngram-trie" }
     ```
 
-3. Build the module:
+## Installation Python
+
+1. Install from pip:
 
     ```bash
-    maturin build
+    pip install ngram-trie
     ```
-
