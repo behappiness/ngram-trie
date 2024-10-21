@@ -2,12 +2,12 @@ use crate::trie::NGramTrie;
 use hashbrown::HashSet;
 use tqdm::tqdm;
 use std::time::Instant;
-
+use serde::{Serialize, Deserialize};
 pub trait Smoothing: Clone{
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiedBackoffKneserNey {
     pub d1: f64,
     pub d2: f64,
@@ -24,6 +24,16 @@ impl ModifiedBackoffKneserNey {
             d3: _d3,
             uniform: _uniform
         }
+    }
+
+    pub fn save(&self, filename: &str) {
+        let serialized = bincode::serialize(self).unwrap();
+        std::fs::write(filename, serialized).unwrap();
+    }
+
+    pub fn load(filename: &str) -> Self {
+        let serialized = std::fs::read(filename).unwrap();
+        bincode::deserialize(&serialized).unwrap()
     }
 
     pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64, f64) {

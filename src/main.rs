@@ -1,10 +1,10 @@
 #![allow(warnings)]
-mod trienode;
 mod trie;
-mod smoothing;
 
 use trie::NGramTrie;
-use smoothing::ModifiedBackoffKneserNey;
+use trie::trienode::TrieNode;
+use trie::smoothing::ModifiedBackoffKneserNey;
+use sorted_vector_map::SortedVectorMap;
 
 use std::sync::Arc;
 use serde::Serialize;
@@ -102,14 +102,21 @@ async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffK
 }
 
 fn main() {
-    run_performance_tests("tokens.json");
-    NGramTrie::estimate_time_and_ram(475_000_000);
+    //run_performance_tests("tokens.json");
+    let node = TrieNode::new(Some(0));
+    println!("{:?}", std::mem::size_of::<SortedVectorMap<u16, Box<TrieNode>>>());
+    println!("{:?}", node.size_in_ram());
+    println!("{:?}", std::mem::size_of::<(u32, Box<TrieNode>)>());
+    println!("{:?}", std::mem::size_of::<Vec<u16>>());
+
+
+    NGramTrie::estimate_time_and_ram(170_000);
     
-    let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
+    let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
 
     let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
 
-    trie.save("../trie_7_475m.bin");
+    //trie.save("../trie_7_170k.bin");
 
     //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
 

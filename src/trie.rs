@@ -1,5 +1,8 @@
-use crate::trienode::TrieNode;
-use crate::smoothing::Smoothing;
+pub mod trienode;
+pub mod smoothing;
+
+use trienode::TrieNode;
+use smoothing::Smoothing;
 use serde::{Serialize, Deserialize};
 use std::mem;
 use std::fs::{File, metadata};
@@ -210,6 +213,7 @@ impl NGramTrie {
         }
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
+        trie.shrink_to_fit();
         trie.size_in_ram();
         trie
     }
