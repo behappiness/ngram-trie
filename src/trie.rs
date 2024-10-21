@@ -87,9 +87,9 @@ impl NGramTrie {
     pub fn _preprocess_rule_context(tokens: &[u16], rule_context: Option<&str>) -> Vec<Option<u16>> {
         let mut result = Vec::new();
         if let Some(rule_context) = rule_context {
-            assert_eq!(tokens.len(), rule_context.len(), "Tokens and rule context must be of the same length");
-            
-            for (&token, rule) in tokens.iter().zip(rule_context.chars()) {
+            assert!(tokens.len() >= rule_context.len(), "Tokens length must be at least as big as rule context length");
+            let diff = tokens.len() - rule_context.len();
+            for (&token, rule) in tokens[diff..].iter().zip(rule_context.chars()) {
                 match rule {
                     '*' => result.push(None),
                     '-' => continue,
@@ -180,7 +180,7 @@ impl NGramTrie {
         let start = Instant::now();
         let mut prediction_probabilities = Vec::<(u16, Vec<(String, f64)>)>::new();
 
-        for token in tqdm(self.root.children.keys()) {
+        for token in self.root.children.keys() {
             let probabilities = self.probability_for_token(smoothing, history, *token);
             prediction_probabilities.push((*token, probabilities));
         }

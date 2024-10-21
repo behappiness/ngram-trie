@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.0"]
+build-backend = "maturin"
+
+[project]
+name = "ngram_trie"
+version = "0.1.0"
+description = "A Rust-based n-gram trie library for Python"
+authors = [
+  {email = "botilovasz@gmail.com"},
+  {name = "Botond Lovász"}
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.6"
+
+[tool.maturin]
+# "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
+features = ["pyo3/extension-module"]
+
+[project.urls]
+"Homepage" = "https://github.com/behappiness/ngram-trie"
+"Repository" = "https://github.com/behappiness/ngram-trie"
