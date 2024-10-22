@@ -15,7 +15,7 @@ use std::num::NonZero;
 use quick_cache::sync::Cache;
 
 pub const BATCH_SIZE: usize = 15_000_000;
-pub const CACHE_SIZE: usize = 100_000;
+pub const CACHE_SIZE: usize = 100_000_000;
 
 lazy_static! {
     static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);

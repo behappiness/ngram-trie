@@ -14,6 +14,7 @@ use bincode::{serialize_into, deserialize_from};
 use tqdm::tqdm;
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
+use simple_tqdm::ParTqdm;
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
@@ -192,7 +193,7 @@ impl NGramTrie {
     pub fn get_prediction_probabilities(&self, smoothing: &dyn Smoothing, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
-        let prediction_probabilities = self.root.children.par_iter()
+        let prediction_probabilities = self.root.children.par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(smoothing, history, *token);
                 (*token, probabilities)

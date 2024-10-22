@@ -104,17 +104,21 @@ async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffK
 fn main() {
     //run_performance_tests("tokens.json");
 
-    NGramTrie::estimate_time_and_ram(475_000_000);
+    //NGramTrie::estimate_time_and_ram(475_000_000);
     
-    let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
+    //let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
 
-    let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
+    //let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
 
-    trie.save("../trie_7_475m_v3.bin");
+    //trie.save("../trie_7_475m_v3.bin");
 
-    //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
+    let mut trie = NGramTrie::load("../trie_7_475m_v3.bin").unwrap();
 
     let smoothing = ModifiedBackoffKneserNey::new(&trie);
+
+    smoothing.save("../smoothing_7_475m_v3.bin");
+
+    //let smoothing = ModifiedBackoffKneserNey::load("../smoothing_7_475m_v3.bin");
     
     let probabilities = trie.get_prediction_probabilities(&smoothing, &vec![510, 224, 290, 185, 1528, 135]);
     
