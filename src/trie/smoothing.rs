@@ -1,14 +1,25 @@
 use crate::trie::NGramTrie;
 use hashbrown::HashSet;
 use sorted_vector_map::SortedVectorSet;
-use tqdm::tqdm;
+use simple_tqdm::ParTqdm;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::collections::HashMap;
+use lazy_static::lazy_static;
+use std::sync::RwLock;
+use lru::LruCache;
+use std::num::NonZero;
+use quick_cache::sync::Cache;
 
-pub const BATCH_SIZE: usize = 10_000_000;
+pub const BATCH_SIZE: usize = 15_000_000;
+pub const CACHE_SIZE: usize = 100_000;
+
+lazy_static! {
+    static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);
+}
 
 pub trait Smoothing: Sync + Send {
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64;
@@ -63,7 +74,7 @@ impl ModifiedBackoffKneserNey {
         let batch_size = BATCH_SIZE;
         let num_batches = (nodes.len() as f64 / batch_size as f64).ceil() as usize;
 
-        (0..num_batches).into_par_iter().for_each(|batch| {
+        (0..num_batches).into_par_iter().tqdm().for_each(|batch| {
             let start = batch * batch_size;
             let end = (start + batch_size).min(nodes.len());
             let mut local_n1 = 0;
@@ -106,7 +117,6 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
-    //TODO: Cache
     pub fn count_unique_ns(trie: &NGramTrie, rule: &[Option<u16>]) -> (u32, u32, u32) {
         let mut n1 = SortedVectorSet::<u16>::new();
         let mut n2 = SortedVectorSet::<u16>::new();
@@ -126,9 +136,12 @@ impl ModifiedBackoffKneserNey {
 
 //From Chen & Goodman 1998
 impl Smoothing for ModifiedBackoffKneserNey {
-    //TODO: Cache
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64 {
-        if rule.len() <= 0 {
+        if let Some(cached_value) = CACHE.get(rule) {
+            return cached_value;
+        }
+
+        if rule.is_empty() {
             return self.uniform;
         }
 
@@ -149,6 +162,10 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
 
-        return (C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
+        let result = (C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
+
+        CACHE.insert(rule.to_vec(), result);
+
+        result
     }
 }
