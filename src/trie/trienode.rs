@@ -7,7 +7,7 @@ use boomphf::hashmap::BoomHashMap;
 use sorted_vector_map::SortedVectorMap;
 
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrieNode {
     pub children: SortedVectorMap<u16, Box<TrieNode>>, // changed from u32 to u16
     pub count: u32

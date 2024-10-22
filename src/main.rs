@@ -103,34 +103,27 @@ async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffK
 
 fn main() {
     //run_performance_tests("tokens.json");
-    let node = TrieNode::new(Some(0));
-    println!("{:?}", std::mem::size_of::<SortedVectorMap<u16, Box<TrieNode>>>());
-    println!("{:?}", node.size_in_ram());
-    println!("{:?}", std::mem::size_of::<(u32, Box<TrieNode>)>());
-    println!("{:?}", std::mem::size_of::<Vec<u16>>());
-
 
     NGramTrie::estimate_time_and_ram(170_000);
     
     let tokens = NGramTrie::load_json("/home/boti/Desktop/ngram-llm-analysis/data/170k_small_tokenized_data.json", None).unwrap();
 
-    let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
+    let mut trie = NGramTrie::fit_multithreaded(tokens, 7, Some(2_usize.pow(14)), None);
 
     //trie.save("../trie_7_170k.bin");
 
     //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
 
-    trie.size_in_ram();
     trie.shrink_to_fit();
-    trie.size_in_ram();
 
     trie.set_rule_set(vec!["++++++".to_string()]);
 
     let smoothing = ModifiedBackoffKneserNey::new(&trie);
     
-
+    let probabilities = trie.get_prediction_probabilities(&smoothing, &vec![510, 4230, 1204, 3042, 4527, 2940]);
+    
     println!("----- Getting rule count -----");
-    let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740,], Some("++*+***"));
+    let rule = NGramTrie::_preprocess_rule_context(&vec![510, 4230, 1204, 3042, 4527, 2940, 3740], Some("++*+***"));
     let start = Instant::now();
     let count = trie.get_count(&rule);
     let elapsed = start.elapsed();

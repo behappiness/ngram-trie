@@ -1,14 +1,23 @@
 use crate::trie::NGramTrie;
 use hashbrown::HashSet;
+use sorted_vector_map::SortedVectorSet;
 use tqdm::tqdm;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
-pub trait Smoothing: Clone{
+use std::sync::{Arc, Mutex};
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+pub const BATCH_SIZE: usize = 10_000_000;
+
+pub trait Smoothing: Sync + Send {
     fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64;
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiedBackoffKneserNey {
+    // #[serde(skip)]
+    // pub trie: Arc<NGramTrie>,
     pub d1: f64,
     pub d2: f64,
     pub d3: f64,
@@ -39,22 +48,47 @@ impl ModifiedBackoffKneserNey {
     pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64, f64) {
         println!("----- Calculating d values -----");
         let start = Instant::now();
-        let mut n1: u32 = 0;
-        let mut n2: u32 = 0;
-        let mut n3: u32 = 0;
-        let mut n4: u32 = 0;
-        for i in tqdm(1..=trie.n_gram_max_length) {
+        let n1 = Arc::new(AtomicU32::new(0));
+        let n2 = Arc::new(AtomicU32::new(0));
+        let n3 = Arc::new(AtomicU32::new(0));
+        let n4 = Arc::new(AtomicU32::new(0));
+        let mut nodes = Vec::new();
+        for i in 1..=trie.n_gram_max_length {
             let rule: Vec<Option<u16>> = vec![None; i as usize];
-            for node in tqdm(trie.find_all_nodes(&rule)) {
+            nodes.extend(trie.find_all_nodes(&rule));
+        }
+
+        println!("Number of nodes: {}", nodes.len());
+
+        let batch_size = BATCH_SIZE;
+        let num_batches = (nodes.len() as f64 / batch_size as f64).ceil() as usize;
+
+        (0..num_batches).into_par_iter().for_each(|batch| {
+            let start = batch * batch_size;
+            let end = (start + batch_size).min(nodes.len());
+            let mut local_n1 = 0;
+            let mut local_n2 = 0;
+            let mut local_n3 = 0;
+            let mut local_n4 = 0;
+            for node in &nodes[start..end] {
                 match node.count {
-                    1 => n1 += 1,
-                    2 => n2 += 1,
-                    3 => n3 += 1,
-                    4 => n4 += 1,
+                    1 => local_n1 += 1,
+                    2 => local_n2 += 1,
+                    3 => local_n3 += 1,
+                    4 => local_n4 += 1,
                     _ => ()
                 }
             }
-        }
+            n1.fetch_add(local_n1 as u32, Ordering::SeqCst);
+            n2.fetch_add(local_n2 as u32, Ordering::SeqCst);
+            n3.fetch_add(local_n3 as u32, Ordering::SeqCst);
+            n4.fetch_add(local_n4 as u32, Ordering::SeqCst);
+        });
+
+        let n1 = n1.load(Ordering::SeqCst);
+        let n2 = n2.load(Ordering::SeqCst);
+        let n3 = n3.load(Ordering::SeqCst);
+        let n4 = n4.load(Ordering::SeqCst);
 
         let uniform = 1.0 / trie.root.children.len() as f64;
 
@@ -74,9 +108,9 @@ impl ModifiedBackoffKneserNey {
 
     //TODO: Cache
     pub fn count_unique_ns(trie: &NGramTrie, rule: &[Option<u16>]) -> (u32, u32, u32) {
-        let mut n1 = HashSet::<u16>::new();
-        let mut n2 = HashSet::<u16>::new();
-        let mut n3 = HashSet::<u16>::new();
+        let mut n1 = SortedVectorSet::<u16>::new();
+        let mut n2 = SortedVectorSet::<u16>::new();
+        let mut n3 = SortedVectorSet::<u16>::new();
         for node in trie.find_all_nodes(&rule) {
             for (key, child) in &node.children {
                 match child.count {

@@ -8,17 +8,27 @@ use std::mem;
 use std::fs::{File, metadata};
 use std::io::{BufReader, BufWriter};
 use std::time::Instant;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::ops::Range;
 use bincode::{serialize_into, deserialize_from};
 use tqdm::tqdm;
 use hashbrown::{HashMap, HashSet};
+use rayon::prelude::*;
 
-#[derive(Serialize, Deserialize, Clone)]
+const BATCH_SIZE: usize = 10_000_000;
+const BATCH_ROOT_CAPACITY: usize = 0;
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NGramTrie {
     pub root: Box<TrieNode>,
     pub n_gram_max_length: u32,
     pub rule_set: Vec<String>
+}
+
+impl Default for NGramTrie {
+    fn default() -> Self {
+        NGramTrie::new(7, None)
+    }
 }
 
 impl NGramTrie {
@@ -163,7 +173,7 @@ impl NGramTrie {
     }
 
     //TODO: Cache??
-    pub fn probability_for_token(&self, smoothing: &impl Smoothing, history: &[u16], predict: u16) -> Vec<(String, f64)> {
+    pub fn probability_for_token(&self, smoothing: &dyn Smoothing, history: &[u16], predict: u16) -> Vec<(String, f64)> {
         let mut rules_smoothed = Vec::<(String, f64)>::new();
 
         for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
@@ -175,15 +185,15 @@ impl NGramTrie {
         rules_smoothed
     }
 
-    pub fn get_prediction_probabilities(&self, smoothing: &impl Smoothing, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
+    pub fn get_prediction_probabilities(&self, smoothing: &dyn Smoothing, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
-        let mut prediction_probabilities = Vec::<(u16, Vec<(String, f64)>)>::new();
-
-        for token in self.root.children.keys() {
-            let probabilities = self.probability_for_token(smoothing, history, *token);
-            prediction_probabilities.push((*token, probabilities));
-        }
+        let prediction_probabilities = self.root.children.par_iter()
+            .map(|(token, _)| {
+                let probabilities = self.probability_for_token(smoothing, history, *token);
+                (*token, probabilities)
+            })
+            .collect();
 
         let duration = start.elapsed();
         println!("Time taken to get prediction probabilities: {:?}", duration);
@@ -218,59 +228,38 @@ impl NGramTrie {
         trie
     }
 
-    #[deprecated]
-    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
-        let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
+    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
+        println!("----- Trie fitting multithreaded -----");
+        let root_trie = Arc::new(Mutex::new(NGramTrie::new(n_gram_max_length, root_capacity)));
+        let tokens_size = max_tokens.unwrap_or(tokens.len());
+        NGramTrie::estimate_time_and_ram(tokens_size);
+        let batch_size = BATCH_SIZE;
+        let num_batches = (tokens_size as f64 / batch_size as f64).ceil() as usize;
 
-        let mut handles = vec![];
-
-        for range in ranges {
-            let mut trie_clone = trie.clone();
-
-            let _tokens = tokens.clone();
-
-            let handle = std::thread::spawn(move || {
-                for i in range.start..range.end - n_gram_max_length as usize + 1 {
-                    let n_gram = &_tokens[i..i + n_gram_max_length as usize];
-                    trie_clone.insert(n_gram);
-                }
-                trie_clone
-            });
-
-            handles.push(handle);
+        let mut tries: Vec<(Self, Range<usize>)> = Vec::new();
+        for batch in 0..num_batches {
+            let batch_start = batch * batch_size;
+            let batch_end = (batch_start + batch_size).min(tokens_size) - n_gram_max_length as usize + 1;
+            let trie = NGramTrie::new(n_gram_max_length, Some(BATCH_ROOT_CAPACITY));
+            tries.push((trie, batch_start..batch_end));
         }
 
-        for handle in handles {
-            let partial_trie = handle.join().unwrap();
-            trie.merge(&partial_trie);
-        }
-        trie
-    }
-
-    #[deprecated]
-    pub fn fit_multithreaded_recursively(tokens: Arc<Vec<u16>>, ranges: Vec<Range<usize>>, n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
-        if ranges.len() > 1 {
-            let mid = ranges.len() / 2;
-            let left = ranges[..mid].to_vec();
-            let right = ranges[mid..].to_vec();
-            // Recursively process both halves
-            let right_clone = tokens.clone();
-            let handle = std::thread::spawn(move || {
-                NGramTrie::fit_multithreaded_recursively(right_clone, right, n_gram_max_length, root_capacity)
-            });
-            let mut left_trie = NGramTrie::fit_multithreaded_recursively(tokens, left, n_gram_max_length, root_capacity);
-            let right_trie = handle.join().unwrap();
-            left_trie.merge(&right_trie);
-            left_trie
-        } else {
-            let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
-            let range = &ranges[0];
-            for i in range.start..range.end - n_gram_max_length as usize + 1 {
-                let n_gram = &tokens[i..i + n_gram_max_length as usize];
-                trie.insert(n_gram);
+        let start = Instant::now();
+        tries.par_iter_mut().for_each(|(trie, range)| {
+            for i in range {
+                trie.insert(&tokens[i..i + n_gram_max_length as usize]);
             }
-            trie
-        }
+            trie.shrink_to_fit();
+            let mut root_trie = root_trie.lock().unwrap();
+            root_trie.merge(trie);
+        });
+        let duration = start.elapsed();
+        println!("Time taken to fit trie: {:?}", duration);
+        
+        let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
+        root_trie.shrink_to_fit();
+        root_trie.size_in_ram();
+        root_trie
     }
 
     pub fn load_json(filename: &str, max_tokens: Option<usize>) -> std::io::Result<Arc<Vec<u16>>> {
@@ -292,21 +281,4 @@ impl NGramTrie {
         Ok(Arc::new(tokens))
     }
     
-    #[deprecated]
-    pub fn split_into_ranges(tokens: Arc<Vec<u16>>, max_tokens: usize, number_of_chunks: usize, n_gram_max_length: u32) -> Vec<Range<usize>> {
-        let mut ranges = Vec::new();
-        let max_tokens = std::cmp::min(max_tokens, tokens.len());
-        let chunk_size = (max_tokens as f64 / number_of_chunks as f64).ceil() as usize;
-        for i in 0..number_of_chunks {
-            let start = i * chunk_size;
-            let end = if i == number_of_chunks - 1 {
-                max_tokens
-            } else {
-                (i + 1) * chunk_size + n_gram_max_length as usize - 1
-            };
-            ranges.push(start..end);
-        }
-        ranges
-    }
-
 }
