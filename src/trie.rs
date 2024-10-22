@@ -15,7 +15,7 @@ use tqdm::tqdm;
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
 
-const BATCH_SIZE: usize = 10_000_000;
+const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -47,7 +47,11 @@ impl NGramTrie {
     }
 
     pub fn merge(&mut self, other: &NGramTrie) {
+        println!("----- Merging tries -----");
+        let start = Instant::now();
         self.root.merge(&other.root);
+        let duration = start.elapsed();
+        println!("Time taken to merge tries: {:?}", duration);
     }
 
     pub fn size_in_ram(&self) -> usize {
@@ -246,15 +250,18 @@ impl NGramTrie {
 
         let start = Instant::now();
         tries.par_iter_mut().for_each(|(trie, range)| {
+            let start_fit = Instant::now();
             for i in range {
                 trie.insert(&tokens[i..i + n_gram_max_length as usize]);
             }
+            let duration_fit = start_fit.elapsed();
+            println!("Time taken to fit trie: {:?}", duration_fit);
             trie.shrink_to_fit();
             let mut root_trie = root_trie.lock().unwrap();
             root_trie.merge(trie);
         });
         let duration = start.elapsed();
-        println!("Time taken to fit trie: {:?}", duration);
+        println!("Time taken to fit trie multithreaded: {:?}", duration);
         
         let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
         root_trie.shrink_to_fit();
