@@ -23,8 +23,8 @@ const CACHE_SIZE_C: usize = 32_000_000; //its related to the number of rules
 const CACHE_SIZE_N: usize = 32_000_000; //its related to the number of rules, should be 233 for 7-grams
 
 lazy_static! {
-    static ref CACHE_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_C);
-    static ref CACHE_N: Cache<Vec<Option<u16>>, (u32, u32, u32)> = Cache::new(CACHE_SIZE_N);
+    static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
+    static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<TrieNode>>> = Cache::new(CACHE_SIZE_N);
 } 
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -171,22 +171,48 @@ impl NGramTrie {
     }
 
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
+        if let Some(cache) = CACHE_C.get(rule) {
+            return cache;
+        }
+
+        if rule.is_empty() {
+            return self.root.get_count(rule);
+        }
+
+        let mut count = 0;
+        let rule_short = rule[..rule.len() - 1].to_vec();
+        if let Some(cache) = CACHE_N.get(&rule_short) {
+            count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
+        } else {
+            count = self.root.get_count(rule);
+        }
+
+        // let nodes = self.find_all_nodes(&rule[..rule.len() - 1]);
+        // let count = nodes.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         
-        self.root.get_count(rule)
+        CACHE_C.insert(rule.to_vec(), count);
+        count
     }
 
     //TODO: merge with unique_continuation_count?
-    pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<&TrieNode> {
-        self.root.find_all_nodes(rule)
+    pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Arc<Vec<TrieNode>> {
+        if let Some(cache) = CACHE_N.get(rule) {
+            return cache.clone();
+        }
+        let nodes = self.root.find_all_nodes(rule);
+        let nodes_clone: Vec<TrieNode> = nodes.iter().map(|&node| node.semi_deep_clone()).collect();
+        let nodes_clone_arc = Arc::new(nodes_clone);
+        CACHE_N.insert(rule.to_vec(), nodes_clone_arc.clone());
+        nodes_clone_arc
     }
 
-    pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
-        let mut unique = HashSet::<u16>::new();
-        for node in self.find_all_nodes(rule) {
-            unique.extend(node.children.keys());
-        }
-        unique
-    }
+    // pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
+    //     let mut unique = HashSet::<u16>::new();
+    //     for node in self.find_all_nodes(rule) {
+    //         unique.extend(node.children.keys());
+    //     }
+    //     unique
+    // }
 
     pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
         let x = tokens_size as f64;

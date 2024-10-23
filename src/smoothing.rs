@@ -14,7 +14,7 @@ use std::num::NonZero;
 use hashbrown::HashSet;
 
 const BATCH_SIZE: usize = 15_000_000;
-const CACHE_SIZE: usize = 16_000_000; //its related to the number of rules
+const CACHE_SIZE: usize = 16_000_000; //its related to the number of rules 233*16104
 const CACHE_SIZE_N: usize = 16_000_000; //its related to the number of rules
 
 lazy_static! {
@@ -57,7 +57,8 @@ impl ModifiedBackoffKneserNey {
         let mut nodes = Vec::new();
         for i in 1..=trie.n_gram_max_length {
             let rule: Vec<Option<u16>> = vec![None; i as usize];
-            nodes.extend(trie.find_all_nodes(&rule));
+            let nodes_arc = trie.find_all_nodes(&rule);
+            nodes.extend(nodes_arc.iter().cloned());
         }
 
         println!("Number of nodes: {}", nodes.len());
@@ -168,7 +169,7 @@ pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u3
     let mut n1 = HashSet::<u16>::new();
     let mut n2 = HashSet::<u16>::new();
     let mut n3 = HashSet::<u16>::new();
-    for node in trie.find_all_nodes(&rule) {
+    for node in trie.find_all_nodes(&rule).iter().cloned() {
         for (key, child) in &node.children {
             match child.count {
                 1 => { n1.insert(*key); },

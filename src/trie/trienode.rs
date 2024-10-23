@@ -100,4 +100,18 @@ impl TrieNode {
             }
         }
     }
+
+    pub fn semi_deep_clone(&self) -> TrieNode {
+        let mut cloned_node = TrieNode {
+            count: self.count,
+            children: SortedVectorMap::with_capacity(self.children.capacity()),
+        };
+        for (key, child) in &self.children {
+            cloned_node.children.insert(*key, Box::new( TrieNode {
+                children: SortedVectorMap::with_capacity(0),
+                count: child.count,
+            }));
+        }
+        cloned_node
+    }
 }
