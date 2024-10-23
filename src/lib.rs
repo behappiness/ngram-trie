@@ -31,6 +31,10 @@ impl PySmoothedTrie {
         self.smoothed_trie.load(filename);
     }
 
+    fn reset_cache(&self) {
+        self.smoothed_trie.reset_cache();
+    }
+
     #[pyo3(signature = (tokens, n_gram_max_length, root_capacity=None, max_tokens=None))]
     fn fit(&mut self, tokens: Vec<u16>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) {
         self.smoothed_trie.fit(Arc::new(tokens), n_gram_max_length, root_capacity, max_tokens);

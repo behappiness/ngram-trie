@@ -27,8 +27,14 @@ impl SmoothedTrie {
         self.smoothing.save(filename);
     }
 
+    pub fn reset_cache(&self) {
+        self.trie.reset_cache();
+        self.smoothing.reset_cache();
+    }
+
     pub fn fit(&mut self, tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) {
         self.trie = Arc::new(NGramTrie::fit(tokens, n_gram_max_length, root_capacity, max_tokens));
+        self.trie.init_cache();
     }
 
     pub fn set_rule_set(&mut self, rule_set: Vec<String>) {

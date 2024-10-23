@@ -104,6 +104,7 @@ impl NGramTrie {
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         println!("Time taken to load trie: {:?}", duration);
+        trie.init_cache();
         trie.size_in_ram();
         Ok(trie)
     }
@@ -175,21 +176,13 @@ impl NGramTrie {
             return cache;
         }
 
-        if rule.is_empty() {
-            return self.root.get_count(rule);
-        }
-
         let mut count = 0;
-        let rule_short = rule[..rule.len() - 1].to_vec();
-        if let Some(cache) = CACHE_N.get(&rule_short) {
+        if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
             count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         } else {
             count = self.root.get_count(rule);
         }
 
-        // let nodes = self.find_all_nodes(&rule[..rule.len() - 1]);
-        // let count = nodes.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
-        
         CACHE_C.insert(rule.to_vec(), count);
         count
     }
@@ -236,6 +229,7 @@ impl NGramTrie {
         }
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
+        trie.init_cache();
         trie.shrink_to_fit();
         trie.size_in_ram();
         trie
@@ -273,6 +267,7 @@ impl NGramTrie {
         println!("Time taken to fit trie multithreaded: {:?}", duration);
         
         let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
+        root_trie.init_cache();
         root_trie.shrink_to_fit();
         root_trie.size_in_ram();
         root_trie
@@ -297,6 +292,16 @@ impl NGramTrie {
         Ok(Arc::new(tokens))
     }
     
+    pub fn init_cache(&self) {
+        CACHE_C.insert(vec![], self.root.get_count(&vec![]));
+        self.find_all_nodes(&vec![]);
+    }
+
+    pub fn reset_cache(&self) {
+        CACHE_C.clear();
+        CACHE_N.clear();
+        self.init_cache();
+    }
 }
 
 impl Hash for NGramTrie {
