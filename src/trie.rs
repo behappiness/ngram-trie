@@ -41,7 +41,6 @@ impl NGramTrie {
         }
     }
 
-    //better to use this as it is simle, maybe even faster
     pub fn insert(&mut self, n_gram: &[u16]) {
         self.root.insert(n_gram);
     }

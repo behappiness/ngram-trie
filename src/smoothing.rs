@@ -14,11 +14,13 @@ use std::num::NonZero;
 use hashbrown::HashSet;
 
 pub const BATCH_SIZE: usize = 15_000_000;
-pub const CACHE_SIZE: usize = 10_000_000;
+pub const CACHE_SIZE: usize = 100_000_000;
+pub const CACHE_SIZE_N: usize = 100_000_000;
 
 lazy_static! {
-    static ref CACHE: RwLock<LruCache<Vec<Option<u16>>, f64>> = RwLock::new(LruCache::new(NonZero::new(CACHE_SIZE).unwrap()));
-}
+    static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);
+    static ref CACHE_N: Cache<Vec<Option<u16>>, (u32, u32, u32)> = Cache::new(CACHE_SIZE_N);
+}   
 
 pub trait Smoothing: Sync + Send {
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64;
@@ -124,7 +126,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
     }
 
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
-        if let Some(&cached_value) = CACHE.read().unwrap().peek(rule) {
+        if let Some(cached_value) = CACHE.get(rule) {
             return cached_value;
         }
 
@@ -150,13 +152,19 @@ impl Smoothing for ModifiedBackoffKneserNey {
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
 
         let result = ((C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..])).into();
-        CACHE.write().unwrap().put(rule.to_vec(), result);
+        CACHE.insert(rule.to_vec(), result);
         result
     }
 }
 
-//#[cached]
+// #[cached(
+//     key = "Vec<Option<u16>>", 
+//     convert = r#"{ rule.clone() }"#
+// )]
 pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
+    if let Some(cached_value) = CACHE_N.get(&rule) {
+        return cached_value;
+    }
     let mut n1 = HashSet::<u16>::new();
     let mut n2 = HashSet::<u16>::new();
     let mut n3 = HashSet::<u16>::new();
@@ -170,5 +178,6 @@ pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u3
         }
     }
     let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+    CACHE_N.insert(rule, result);
     result
 }
