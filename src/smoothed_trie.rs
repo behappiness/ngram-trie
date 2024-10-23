@@ -18,8 +18,7 @@ impl SmoothedTrie {
     }
 
     pub fn load(&mut self, filename: &str) {
-        let trie = NGramTrie::load(filename).unwrap();
-        self.trie = Arc::new(trie);
+        self.trie = Arc::new(NGramTrie::load(filename).unwrap());
         self.smoothing.load(filename);
     }
 

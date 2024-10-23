@@ -14,9 +14,18 @@ use tqdm::tqdm;
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
+use lazy_static::lazy_static;
+use quick_cache::sync::Cache;
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
+const CACHE_SIZE_C: usize = 32_000_000; //its related to the number of rules
+const CACHE_SIZE_N: usize = 32_000_000; //its related to the number of rules, should be 233 for 7-grams
+
+lazy_static! {
+    static ref CACHE_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_C);
+    static ref CACHE_N: Cache<Vec<Option<u16>>, (u32, u32, u32)> = Cache::new(CACHE_SIZE_N);
+} 
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NGramTrie {
@@ -150,17 +159,19 @@ impl NGramTrie {
         }
     
         ruleset.extend(hashmap.values().cloned());
-    
+        ruleset.sort_by(|a, b| a.len().cmp(&b.len()));
         ruleset
     }
 
     pub fn set_rule_set(&mut self, rule_set: Vec<String>) {
         println!("----- Setting rule set -----");
         self.rule_set = rule_set;
+        self.rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
         println!("Rule set: {:?}", self.rule_set);
     }
 
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
+        
         self.root.get_count(rule)
     }
 

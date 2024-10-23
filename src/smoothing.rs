@@ -13,9 +13,9 @@ use lru::LruCache;
 use std::num::NonZero;
 use hashbrown::HashSet;
 
-pub const BATCH_SIZE: usize = 15_000_000;
-pub const CACHE_SIZE: usize = 100_000_000;
-pub const CACHE_SIZE_N: usize = 100_000_000;
+const BATCH_SIZE: usize = 15_000_000;
+const CACHE_SIZE: usize = 16_000_000; //its related to the number of rules
+const CACHE_SIZE_N: usize = 16_000_000; //its related to the number of rules
 
 lazy_static! {
     static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);
@@ -151,7 +151,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
 
-        let result = ((C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..])).into();
+        let result = (C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
         CACHE.insert(rule.to_vec(), result);
         result
     }

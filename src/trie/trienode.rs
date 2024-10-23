@@ -5,6 +5,7 @@ use hashbrown::HashMap;
 use std::collections::BTreeMap;
 use boomphf::hashmap::BoomHashMap;
 use sorted_vector_map::SortedVectorMap;
+use rayon::prelude::*;
 
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

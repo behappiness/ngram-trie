@@ -107,7 +107,8 @@ fn main() {
     //run_performance_tests("tokens.json");
 
     //NGramTrie::estimate_time_and_ram(475_000_000);
-    
+
+    let mut rule_set = NGramTrie::_calculate_ruleset(5);
     let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
 
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), Box::new(ModifiedBackoffKneserNey::new(&NGramTrie::new(7, Some(2_usize.pow(14))))));
@@ -115,17 +116,16 @@ fn main() {
     smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None);
     smoothed_trie.fit_smoothing();
 
-    smoothed_trie.save("../7-gram_170k");
+    smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
 
-    //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
-    
-    let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
-    
     println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
-    let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("++*+***"));
+    let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
     let start = Instant::now();
     let count = smoothed_trie.get_count(rule);
     let elapsed = start.elapsed();
     println!("Count: {}", count);
     println!("Time taken: {:?}", elapsed);
+    
+    let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
+        
 }
