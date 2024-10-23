@@ -15,7 +15,7 @@ use hashbrown::HashSet;
 
 const BATCH_SIZE: usize = 15_000_000;
 const CACHE_SIZE: usize = 16_000_000; //its related to the number of rules 233*16104
-const CACHE_SIZE_N: usize = 16_000_000; //its related to the number of rules
+const CACHE_SIZE_N: usize = 2_000; //its related to the number of rules 233*7
 
 lazy_static! {
     static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);

@@ -19,8 +19,8 @@ use quick_cache::sync::Cache;
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
-const CACHE_SIZE_C: usize = 32_000_000; //its related to the number of rules
-const CACHE_SIZE_N: usize = 32_000_000; //its related to the number of rules, should be 233 for 7-grams
+const CACHE_SIZE_C: usize = 16_000_000; //its related to the number of rules, 233*16104
+const CACHE_SIZE_N: usize = 2_000; //its related to the number of rules, 233*7
 
 lazy_static! {
     static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);

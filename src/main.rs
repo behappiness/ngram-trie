@@ -105,20 +105,22 @@ async fn start_http_server(smoothed_trie: Arc<SmoothedTrie>) -> std::io::Result<
 
 fn main() {
     //run_performance_tests("tokens.json");
-
     //NGramTrie::estimate_time_and_ram(475_000_000);
-
-    let mut rule_set = NGramTrie::_calculate_ruleset(5);
-    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-
+    
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), Box::new(ModifiedBackoffKneserNey::new(&NGramTrie::new(7, Some(2_usize.pow(14))))));
 
+    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
     smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None);
     smoothed_trie.fit_smoothing();
 
-    smoothed_trie.set_rule_set(rule_set);
+    smoothed_trie.save("../170k_tokens");
+
+    smoothed_trie.load("../170k_tokens");
+
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-
+    let mut rule_set = NGramTrie::_calculate_ruleset(5);
+    smoothed_trie.set_rule_set(rule_set);
+    
     // println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
     // let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
     // let start = Instant::now();
@@ -126,19 +128,6 @@ fn main() {
     // let elapsed = start.elapsed();
     // println!("Count: {}", count);
     // println!("Time taken: {:?}", elapsed);
-
-    // println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
-    // let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
-    // let start = Instant::now();
-    // let count = smoothed_trie.get_count(rule.clone());
-    // let elapsed = start.elapsed();
-    // println!("Count: {}", count);
-    // println!("Time taken: {:?}", elapsed);
-
-    // let nodes = smoothed_trie.trie.find_all_nodes(&rule);
-    // println!("Nodes: {:?}", nodes);
-    // let count: u32= nodes.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
-    // println!("Count: {}", count);
 
     let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
         
