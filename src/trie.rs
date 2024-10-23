@@ -1,8 +1,7 @@
 pub mod trienode;
-pub mod smoothing;
 
 use trienode::TrieNode;
-use smoothing::Smoothing;
+use crate::smoothing::Smoothing;
 use serde::{Serialize, Deserialize};
 use std::mem;
 use std::fs::{File, metadata};
@@ -14,7 +13,7 @@ use bincode::{serialize_into, deserialize_from};
 use tqdm::tqdm;
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
-use simple_tqdm::ParTqdm;
+use std::hash::{Hash, Hasher};
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
@@ -76,12 +75,13 @@ impl NGramTrie {
     pub fn save(&self, filename: &str) -> std::io::Result<()> {
         println!("----- Saving trie -----");
         let start = Instant::now();
-        let file = File::create(filename)?;
+        let _file = filename.to_owned() + ".trie";
+        let file = File::create(&_file)?;
         let writer = BufWriter::new(file);
         serialize_into(writer, self).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         let duration = start.elapsed();
         println!("Time taken to save trie: {:?}", duration);
-        let file_size = metadata(filename).expect("Unable to get file metadata").len();
+        let file_size = metadata(&_file).expect("Unable to get file metadata").len();
         let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
         println!("Size of saved file: {:.2} MB", file_size_mb);
         Ok(())
@@ -90,7 +90,8 @@ impl NGramTrie {
     pub fn load(filename: &str) -> std::io::Result<Self> {
         println!("----- Loading trie -----");
         let start = Instant::now();
-        let file = File::open(filename)?;
+        let _file = filename.to_owned() + ".trie";
+        let file = File::open(_file)?;
         let reader = BufReader::new(file);
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
@@ -177,35 +178,6 @@ impl NGramTrie {
         unique
     }
 
-    //TODO: Cache??
-    pub fn probability_for_token(&self, smoothing: &dyn Smoothing, history: &[u16], predict: u16) -> Vec<(String, f64)> {
-        let mut rules_smoothed = Vec::<(String, f64)>::new();
-
-        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
-            let mut rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
-            rule.push(Some(predict));
-            rules_smoothed.push((r_set.to_string(), smoothing.smoothing(&self, &rule)));
-        }
-
-        rules_smoothed
-    }
-
-    pub fn get_prediction_probabilities(&self, smoothing: &dyn Smoothing, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
-        println!("----- Getting prediction probabilities -----");
-        let start = Instant::now();
-        let prediction_probabilities = self.root.children.par_iter().tqdm()
-            .map(|(token, _)| {
-                let probabilities = self.probability_for_token(smoothing, history, *token);
-                (*token, probabilities)
-            })
-            .collect();
-
-        let duration = start.elapsed();
-        println!("Time taken to get prediction probabilities: {:?}", duration);
-
-        prediction_probabilities
-    }
-
     pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
         let x = tokens_size as f64;
         let y = 0.0021 * x.powf(0.8525);
@@ -290,3 +262,18 @@ impl NGramTrie {
     }
     
 }
+
+impl Hash for NGramTrie {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.n_gram_max_length.hash(state);
+        self.root.count.hash(state);
+    }
+}
+
+impl PartialEq for NGramTrie {
+    fn eq(&self, other: &Self) -> bool {
+        self.n_gram_max_length == other.n_gram_max_length && self.root.count == other.root.count
+    }
+}
+
+impl Eq for NGramTrie {}

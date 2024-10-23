@@ -1,34 +1,33 @@
 use crate::trie::NGramTrie;
-use hashbrown::HashSet;
 use sorted_vector_map::SortedVectorSet;
 use simple_tqdm::ParTqdm;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::collections::HashMap;
+use cached::proc_macro::cached;
+use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
-use std::sync::RwLock;
 use lru::LruCache;
 use std::num::NonZero;
-use quick_cache::sync::Cache;
+use hashbrown::HashSet;
 
 pub const BATCH_SIZE: usize = 15_000_000;
-pub const CACHE_SIZE: usize = 100_000_000;
+pub const CACHE_SIZE: usize = 10_000_000;
 
 lazy_static! {
-    static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);
+    static ref CACHE: RwLock<LruCache<Vec<Option<u16>>, f64>> = RwLock::new(LruCache::new(NonZero::new(CACHE_SIZE).unwrap()));
 }
 
 pub trait Smoothing: Sync + Send {
-    fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64;
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64;
+    fn save(&self, filename: &str);
+    fn load(&mut self, filename: &str);
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiedBackoffKneserNey {
-    // #[serde(skip)]
-    // pub trie: Arc<NGramTrie>,
     pub d1: f64,
     pub d2: f64,
     pub d3: f64,
@@ -44,16 +43,6 @@ impl ModifiedBackoffKneserNey {
             d3: _d3,
             uniform: _uniform
         }
-    }
-
-    pub fn save(&self, filename: &str) {
-        let serialized = bincode::serialize(self).unwrap();
-        std::fs::write(filename, serialized).unwrap();
-    }
-
-    pub fn load(filename: &str) -> Self {
-        let serialized = std::fs::read(filename).unwrap();
-        bincode::deserialize(&serialized).unwrap()
     }
 
     pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64, f64) {
@@ -117,27 +106,25 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
-    pub fn count_unique_ns(trie: &NGramTrie, rule: &[Option<u16>]) -> (u32, u32, u32) {
-        let mut n1 = SortedVectorSet::<u16>::new();
-        let mut n2 = SortedVectorSet::<u16>::new();
-        let mut n3 = SortedVectorSet::<u16>::new();
-        for node in trie.find_all_nodes(&rule) {
-            for (key, child) in &node.children {
-                match child.count {
-                    1 => { n1.insert(*key); },
-                    2 => { n2.insert(*key); },
-                    _ => { n3.insert(*key); }
-                }
-            }
-        }
-        (n1.len() as u32, n2.len() as u32, n3.len() as u32)
-    }
+    
 }
 
 //From Chen & Goodman 1998
 impl Smoothing for ModifiedBackoffKneserNey {
-    fn smoothing(&self, trie: &NGramTrie, rule: &[Option<u16>]) -> f64 {
-        if let Some(cached_value) = CACHE.get(rule) {
+    fn save(&self, filename: &str) {
+        let _file = filename.to_owned() + ".smoothing";
+        let serialized = bincode::serialize(self).unwrap();
+        std::fs::write(_file, serialized).unwrap();
+    }
+
+    fn load(&mut self, filename: &str) {
+        let _file = filename.to_owned() + ".smoothing";
+        let serialized = std::fs::read(_file).unwrap();
+        *self = bincode::deserialize(&serialized).unwrap();
+    }
+
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
+        if let Some(&cached_value) = CACHE.read().unwrap().peek(rule) {
             return cached_value;
         }
 
@@ -158,14 +145,30 @@ impl Smoothing for ModifiedBackoffKneserNey {
             _ => self.d3
         };
 
-        let (n1, n2, n3) = ModifiedBackoffKneserNey::count_unique_ns(trie, &W_i_minus_1);
+        let (n1, n2, n3) = count_unique_ns(trie.clone(), W_i_minus_1.to_vec());
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / C_i_minus_1 as f64;
 
-        let result = (C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
-
-        CACHE.insert(rule.to_vec(), result);
-
+        let result = ((C_i as f64 - d).max(0.0) / C_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..])).into();
+        CACHE.write().unwrap().put(rule.to_vec(), result);
         result
     }
+}
+
+//#[cached]
+pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
+    let mut n1 = HashSet::<u16>::new();
+    let mut n2 = HashSet::<u16>::new();
+    let mut n3 = HashSet::<u16>::new();
+    for node in trie.find_all_nodes(&rule) {
+        for (key, child) in &node.children {
+            match child.count {
+                1 => { n1.insert(*key); },
+                2 => { n2.insert(*key); },
+                _ => { n3.insert(*key); }
+            }
+        }
+    }
+    let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+    result
 }

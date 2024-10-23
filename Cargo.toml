@@ -34,3 +34,4 @@ lazy_static = "1.5.0"
 lru = "0.12.5"
 quick_cache = "0.6.9"
 simple-tqdm = { version = "0.2.0", features = ["rayon"] }
+cached = "0.53.1"

@@ -1,10 +1,13 @@
 #![allow(warnings)]
-mod trie;
+pub mod trie;
+pub mod smoothing;
+pub mod smoothed_trie;
 
 use trie::NGramTrie;
 use trie::trienode::TrieNode;
-use trie::smoothing::ModifiedBackoffKneserNey;
+use smoothing::ModifiedBackoffKneserNey;
 use sorted_vector_map::SortedVectorMap;
+use smoothed_trie::SmoothedTrie;
 
 use std::sync::Arc;
 use serde::Serialize;
@@ -76,8 +79,8 @@ struct PredictionResponse {
     probabilities: Vec<(u16, Vec<(String, f64)>)>,
 }
 
-async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<NGramTrie>, smoothing: web::Data<ModifiedBackoffKneserNey>) -> impl Responder {
-    let mut probabilities = trie.get_prediction_probabilities(smoothing.as_ref(), &req.history);
+async fn predict_probability(req: web::Json<PredictionRequest>, smoothed_trie: web::Data<SmoothedTrie>) -> impl Responder {
+    let mut probabilities = smoothed_trie.get_prediction_probabilities(&req.history);
 
     probabilities.sort_by_key(|k| k.0);
 
@@ -88,12 +91,11 @@ async fn predict_probability(req: web::Json<PredictionRequest>, trie: web::Data<
 }
 
 #[tokio::main]
-async fn start_http_server(trie: Arc<NGramTrie>, smoothing: Arc<ModifiedBackoffKneserNey>) -> std::io::Result<()> {
+async fn start_http_server(smoothed_trie: Arc<SmoothedTrie>) -> std::io::Result<()> {
     println!("----- Starting HTTP server -----");
     HttpServer::new(move || {
         App::new()
-            .app_data(trie.clone())
-            .app_data(smoothing.clone())
+            .app_data(smoothed_trie.clone())
             .service(web::resource("/predict").route(web::post().to(predict_probability)))
     })
     .bind("127.0.0.1:8080")?
@@ -106,30 +108,24 @@ fn main() {
 
     //NGramTrie::estimate_time_and_ram(475_000_000);
     
-    //let tokens = NGramTrie::load_json("../cleaned_tokens.json", None).unwrap();
+    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
 
-    //let mut trie = NGramTrie::fit(tokens, 7, Some(2_usize.pow(14)), None);
+    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), Box::new(ModifiedBackoffKneserNey::new(&NGramTrie::new(7, Some(2_usize.pow(14))))));
 
-    //trie.save("../trie_7_475m_v3.bin");
+    smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None);
+    smoothed_trie.fit_smoothing();
 
-    let mut trie = NGramTrie::load("../trie_7_475m_v3.bin").unwrap();
+    smoothed_trie.save("../7-gram_170k");
 
-    let smoothing = ModifiedBackoffKneserNey::new(&trie);
-
-    smoothing.save("../smoothing_7_475m_v3.bin");
-
-    //let smoothing = ModifiedBackoffKneserNey::load("../smoothing_7_475m_v3.bin");
+    //let mut trie = NGramTrie::load("../trie_7_475m.bin").unwrap();
     
-    let probabilities = trie.get_prediction_probabilities(&smoothing, &vec![510, 224, 290, 185, 1528, 135]);
+    let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
     
-    println!("----- Getting rule count -----");
-    let rule = NGramTrie::_preprocess_rule_context(&vec![510, 224, 290, 185, 1528, 135], Some("++*+***"));
+    println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
+    let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("++*+***"));
     let start = Instant::now();
-    let count = trie.get_count(&rule);
+    let count = smoothed_trie.get_count(rule);
     let elapsed = start.elapsed();
     println!("Count: {}", count);
     println!("Time taken: {:?}", elapsed);
-
-    let trie = Arc::new(trie);
-    let smoothing = Arc::new(smoothing);
 }
