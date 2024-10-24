@@ -70,6 +70,7 @@ impl SmoothedTrie {
     pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
+        assert!(history.len() < self.trie.n_gram_max_length as usize, "History length must be less than the n-gram max length");
         let prediction_probabilities = self.trie.root.children.par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);

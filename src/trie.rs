@@ -18,8 +18,10 @@ use quick_cache::sync::Cache;
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
-const CACHE_SIZE_C: usize = 233*16104; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_N: usize = 233*3; //(rules+25%) = RULES*1.25
+
+// the dataset size matters as well
+const CACHE_SIZE_C: usize = 233*16104*4; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_N: usize = 233*3*4; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);

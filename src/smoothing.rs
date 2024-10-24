@@ -9,8 +9,9 @@ use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
 use hashbrown::HashSet;
 
-const CACHE_SIZE_S_C: usize = 233*16104; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_S_N: usize = 233*3; //(rules+25%) = RULES*1.25
+// the dataset size matters as well
+const CACHE_SIZE_S_C: usize = 233*16104*4; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_S_N: usize = 233*3*4; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_S_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_S_C);

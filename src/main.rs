@@ -125,16 +125,20 @@ fn main() {
     let mut rule_set = NGramTrie::_calculate_ruleset(7);
     smoothed_trie.set_rule_set(rule_set);
     
-    println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
-    let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
+    println!("----- Getting rule count -----");
+    let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987], Some("**+***"));
     let start = Instant::now();
     let count = smoothed_trie.get_count(rule.clone());
     let elapsed = start.elapsed();
     println!("Count: {}", count);
     println!("Time taken: {:?}", elapsed);
     
-    let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
-    print_cache_sizes();
+    // 170k_tokens
+    //let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+
+    // 475m_tokens
+    let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
+    test_seq_smoothing(&mut smoothed_trie, history);
 }
 
 fn print_cache_sizes() {
@@ -142,4 +146,13 @@ fn print_cache_sizes() {
     println!("CACHE_S_N size: {}", CACHE_S_N.len());
     println!("CACHE_C size: {}", CACHE_C.len());
     println!("CACHE_N size: {}", CACHE_N.len());
+}
+
+fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
+    smoothed_trie.set_rule_set(NGramTrie::_calculate_ruleset(smoothed_trie.trie.n_gram_max_length));
+    for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
+        let rule = tokens[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
+        let probabilities = smoothed_trie.get_prediction_probabilities(&rule);
+        print_cache_sizes();
+    }
 }
