@@ -56,7 +56,7 @@ impl ModifiedBackoffKneserNey {
         let n3 = Arc::new(AtomicU32::new(0));
         let n4 = Arc::new(AtomicU32::new(0));
         let nodes = Arc::new(AtomicU32::new(0));
-        trie.root.children.par_iter().for_each(|(_, child)| {
+        trie.root.children.par_iter().tqdm().for_each(|(_, child)| {
             let (c1, c2, c3, c4, _nodes) = child.count_ns();
             n1.fetch_add(c1, Ordering::SeqCst);
             n2.fetch_add(c2, Ordering::SeqCst);
