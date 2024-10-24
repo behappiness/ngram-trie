@@ -1,8 +1,8 @@
 use serde::{Serialize, Deserialize};
 use sorted_vector_map::SortedVectorMap;
-use std::sync::Arc;
 use quick_cache::sync::Cache;
 use crate::trie::Rule;
+use rclite::Arc;
 
 //we are not using these
 const CACHE_SIZE: usize = 233*3*4835; // RULES*1.25
@@ -10,12 +10,8 @@ const CACHE_SIZE_N: usize = 233*3; // RULES*1.25
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrieNode {
-    pub children: SortedVectorMap<u16, Arc<TrieNode>>, // changed from u32 to u16
+    pub children: SortedVectorMap<u16, Arc<TrieNode>>,
     pub count: u32,
-    // #[serde(skip)]
-    // pub cache_c: TrieNodeCache
-    // #[serde(skip)]
-    // pub cache_n: TrieNodeCacheN
 }
 
 impl TrieNode {
@@ -23,8 +19,6 @@ impl TrieNode {
         TrieNode {
             children: SortedVectorMap::with_capacity(capacity.unwrap_or(0)),
             count: 0,
-            // cache_c: TrieNodeCache::default()
-            // cache_n: TrieNodeCacheN::default()
         }
     }
 

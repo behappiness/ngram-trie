@@ -3,7 +3,7 @@ pub mod smoothing;
 pub mod smoothed_trie;
 
 use pyo3::prelude::*;
-use std::sync::Arc;
+use rclite::Arc;
 use trie::NGramTrie;
 use smoothing::ModifiedBackoffKneserNey;
 use smoothed_trie::SmoothedTrie;

@@ -13,7 +13,7 @@ use crate::smoothing::CACHE_S_N;
 use crate::trie::CACHE_C;
 use crate::trie::CACHE_N;
 
-use std::sync::Arc;
+use rclite::Arc;
 use serde::Serialize;
 use serde::Deserialize;
 use std::time::Instant;
@@ -117,21 +117,21 @@ fn main() {
     smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None);
     smoothed_trie.fit_smoothing();
 
-    //smoothed_trie.save("../170k_tokens");
+    smoothed_trie.save("../170k_tokens");
 
     //smoothed_trie.load("../170k_tokens");
 
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(6);
+    let mut rule_set = NGramTrie::_calculate_ruleset(5);
     smoothed_trie.set_rule_set(rule_set);
     
-    // println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
-    // let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
-    // let start = Instant::now();
-    // let count = smoothed_trie.get_count(rule.clone());
-    // let elapsed = start.elapsed();
-    // println!("Count: {}", count);
-    // println!("Time taken: {:?}", elapsed);
+    println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
+    let rule = NGramTrie::_preprocess_rule_context(&vec![4107, 1253, 375, 4230, 1140, 3042], Some("**+***"));
+    let start = Instant::now();
+    let count = smoothed_trie.get_count(rule.clone());
+    let elapsed = start.elapsed();
+    println!("Count: {}", count);
+    println!("Time taken: {:?}", elapsed);
     
     let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
         

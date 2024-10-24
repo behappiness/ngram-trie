@@ -1,6 +1,6 @@
 use crate::trie::NGramTrie;
 use crate::smoothing::Smoothing;
-use std::sync::Arc;
+use rclite::Arc;
 use std::time::Instant;
 use rayon::prelude::*;
 use crate::smoothing::ModifiedBackoffKneserNey;

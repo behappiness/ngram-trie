@@ -2,7 +2,7 @@ use crate::trie::NGramTrie;
 use simple_tqdm::ParTqdm;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
+use rclite::Arc;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
