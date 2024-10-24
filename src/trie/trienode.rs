@@ -51,15 +51,6 @@ impl TrieNode {
         }
     }
 
-    pub fn size_in_ram(&self) -> usize {
-        let mut size = mem::size_of::<TrieNode>();
-        size += self.children.capacity() * mem::size_of::<(u16, Box<TrieNode>)>(); // changed from u32 to u16
-        for child in self.children.values() {
-            size += child.size_in_ram();
-        }
-        size
-    }
-
     /// Shrinks the children vector to fit the number of elements. Starting from the leaf nodes.
     pub fn shrink_to_fit(&mut self) {
         for child in self.children.values_mut() {
@@ -101,11 +92,12 @@ impl TrieNode {
         }
     }
 
-    pub fn count_ns(&self) -> (u32, u32, u32, u32) {
+    pub fn count_ns(&self) -> (u32, u32, u32, u32, u32) {
         let mut n1 = 0;
         let mut n2 = 0;
         let mut n3 = 0;
         let mut n4 = 0;
+        let mut nodes = 1;
         match self.count {
             1 => n1 += 1,
             2 => n2 += 1,
@@ -114,13 +106,14 @@ impl TrieNode {
             _ => ()
         }
         for child in self.children.values() {
-            let (c1, c2, c3, c4) = child.count_ns();
+            let (c1, c2, c3, c4, _nodes) = child.count_ns();
             n1 += c1;
             n2 += c2;
             n3 += c3;
             n4 += c4;
+            nodes += _nodes;
         }
-        (n1, n2, n3, n4)
+        (n1, n2, n3, n4, nodes)
     }
 
     pub fn semi_deep_clone(&self) -> TrieNode {

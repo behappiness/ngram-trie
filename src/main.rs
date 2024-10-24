@@ -40,7 +40,7 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
             let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, None,Some(data_size));
             let fit_time = start.elapsed().as_secs_f64(); 
             // Measure RAM usage
-            let ram_usage = trie.size_in_ram() as f64 / (1024.0 * 1024.0);
+            let ram_usage = 0 as f64 / (1024.0 * 1024.0);
 
             // Write statistics to file
             writeln!(
@@ -118,7 +118,7 @@ fn main() {
     //smoothed_trie.load("../170k_tokens");
 
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(5);
+    let mut rule_set = NGramTrie::_calculate_ruleset(7);
     smoothed_trie.set_rule_set(rule_set);
     
     // println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135

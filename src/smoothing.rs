@@ -14,8 +14,8 @@ use std::num::NonZero;
 use hashbrown::HashSet;
 
 const BATCH_SIZE: usize = 15_000_000;
-const CACHE_SIZE: usize = 16_000_000; //its related to the number of rules 233*16104
-const CACHE_SIZE_N: usize = 2_000; //its related to the number of rules 233*7
+const CACHE_SIZE: usize = 233*7*32; //its related to the number of rules 233*7*THREADS
+const CACHE_SIZE_N: usize = 233*7*32; //its related to the number of rules 233*7*THREADS
 
 lazy_static! {
     static ref CACHE: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE);
@@ -55,19 +55,23 @@ impl ModifiedBackoffKneserNey {
         let n2 = Arc::new(AtomicU32::new(0));
         let n3 = Arc::new(AtomicU32::new(0));
         let n4 = Arc::new(AtomicU32::new(0));
+        let nodes = Arc::new(AtomicU32::new(0));
         trie.root.children.par_iter().for_each(|(_, child)| {
-            let (c1, c2, c3, c4) = child.count_ns();
+            let (c1, c2, c3, c4, _nodes) = child.count_ns();
             n1.fetch_add(c1, Ordering::SeqCst);
             n2.fetch_add(c2, Ordering::SeqCst);
             n3.fetch_add(c3, Ordering::SeqCst);
             n4.fetch_add(c4, Ordering::SeqCst);
+            nodes.fetch_add(_nodes, Ordering::SeqCst);
         });
 
         let n1 = n1.load(Ordering::SeqCst);
         let n2 = n2.load(Ordering::SeqCst);
         let n3 = n3.load(Ordering::SeqCst);
         let n4 = n4.load(Ordering::SeqCst);
+        let nodes = nodes.load(Ordering::SeqCst);
 
+        println!("Nodes: {}", nodes);
         let uniform = 1.0 / trie.root.children.len() as f64;
 
         if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {

@@ -19,8 +19,8 @@ use quick_cache::{sync::Cache, Equivalent};
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
-const CACHE_SIZE_C: usize = 16_000_000; //its related to the number of rules, 233*16104
-const CACHE_SIZE_N: usize = 2_000; //its related to the number of rules, 233*7
+const CACHE_SIZE_C: usize = 233*7*2*32; //its related to the number of rules, 233*7*2*THREADS
+const CACHE_SIZE_N: usize = 233*7*32; //its related to the number of rules, 233*7*THREADS
 
 lazy_static! {
     static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
@@ -49,8 +49,7 @@ impl PartialEq for Rule {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NGramTrie {
     pub root: Box<TrieNode>,
-    pub n_gram_max_length: u32,
-    pub rule_set: Vec<String>
+    pub n_gram_max_length: u32
 }
 
 impl Default for NGramTrie {
@@ -61,11 +60,9 @@ impl Default for NGramTrie {
 
 impl NGramTrie {
     pub fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
-        let _rule_set = NGramTrie::_calculate_ruleset(n_gram_max_length - 1);
         NGramTrie {
             root: Box::new(TrieNode::new(root_capacity)),
-            n_gram_max_length,
-            rule_set: _rule_set
+            n_gram_max_length
         }
     }
 
@@ -79,16 +76,6 @@ impl NGramTrie {
         self.root.merge(&other.root);
         let duration = start.elapsed();
         println!("Time taken to merge tries: {:?}", duration);
-    }
-
-    pub fn size_in_ram(&self) -> usize {
-        println!("----- Calculating size in RAM -----");
-        let start = Instant::now();
-        let size = mem::size_of::<NGramTrie>() + self.root.size_in_ram();
-        let duration = start.elapsed();
-        println!("Time taken to calculate size in RAM: {:?}", duration);
-        println!("Size in RAM: {} MB", size as f64 / (1024.0 * 1024.0));
-        size
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -123,7 +110,6 @@ impl NGramTrie {
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         println!("Time taken to load trie: {:?}", duration);
-        trie.size_in_ram();
         Ok(trie)
     }
 
@@ -180,13 +166,6 @@ impl NGramTrie {
         ruleset.extend(hashmap.values().cloned());
         ruleset.sort_by(|a, b| a.len().cmp(&b.len()));
         ruleset
-    }
-
-    pub fn set_rule_set(&mut self, rule_set: Vec<String>) {
-        println!("----- Setting rule set -----");
-        self.rule_set = rule_set;
-        self.rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
-        println!("Rule set: {:?}", self.rule_set);
     }
 
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
@@ -248,7 +227,6 @@ impl NGramTrie {
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
         trie.shrink_to_fit();
-        trie.size_in_ram();
         trie
     }
 
@@ -285,7 +263,6 @@ impl NGramTrie {
         
         let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
         root_trie.shrink_to_fit();
-        root_trie.size_in_ram();
         root_trie
     }
 

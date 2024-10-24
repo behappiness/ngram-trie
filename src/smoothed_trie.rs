@@ -9,12 +9,14 @@ use tqdm::Iter;
 
 pub struct SmoothedTrie {
     pub trie: Arc<NGramTrie>,
-    pub smoothing: Box<dyn Smoothing>
+    pub smoothing: Box<dyn Smoothing>,
+    pub rule_set: Vec<String>
 }
 
 impl SmoothedTrie {
     pub fn new(trie: NGramTrie, smoothing: Box<dyn Smoothing>) -> Self {
-        SmoothedTrie { trie: Arc::new(trie), smoothing: smoothing }
+        let rule_set = NGramTrie::_calculate_ruleset(trie.n_gram_max_length);
+        SmoothedTrie { trie: Arc::new(trie), smoothing: smoothing, rule_set: rule_set }
     }
 
     pub fn load(&mut self, filename: &str) {
@@ -39,9 +41,10 @@ impl SmoothedTrie {
     }
 
     pub fn set_rule_set(&mut self, rule_set: Vec<String>) {
-        let mut trie: NGramTrie = (*self.trie).clone();
-        trie.rule_set = rule_set;
-        self.trie = Arc::new(trie);
+        println!("----- Setting rule set -----");
+        self.rule_set = rule_set;
+        self.rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
+        println!("Rule set: {:?}", self.rule_set.len());
     }
 
     pub fn fit_smoothing(&mut self) {
@@ -55,9 +58,8 @@ impl SmoothedTrie {
 
     pub fn probability_for_token(&self, history: &[u16], predict: u16) -> Vec<(String, f64)> {
         let mut rules_smoothed = Vec::<(String, f64)>::new();
-        let _trie = self.trie.clone();
 
-        for r_set in &_trie.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
+        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let mut rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
             rule.push(Some(predict));
             rules_smoothed.push((r_set.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule)));
@@ -69,8 +71,7 @@ impl SmoothedTrie {
     pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
-        let _trie = self.trie.clone();
-        let prediction_probabilities = _trie.root.children.par_iter().tqdm()
+        let prediction_probabilities = self.trie.root.children.par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);
                 (*token, probabilities)
