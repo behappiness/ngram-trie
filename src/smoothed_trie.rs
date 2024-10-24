@@ -79,7 +79,7 @@ impl SmoothedTrie {
             .collect();
 
         let duration = start.elapsed();
-        println!("Time taken to get prediction probabilities: {:?}", duration);
+        println!("Time taken to get prediction probabilities: {:.2?}", duration);
 
         prediction_probabilities
     }

@@ -54,7 +54,7 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
             ).unwrap();
 
             println!(
-                "Completed: Data Size = {}, N-gram Length = {}, Fit Time = {}, RAM Usage = {:.2} MB",
+                "Completed: Data Size = {}, N-gram Length = {}, Fit Time = {:.2}, RAM Usage = {:.2} MB",
                 data_size, n_gram_length, fit_time, ram_usage
             );
         }
@@ -131,7 +131,7 @@ fn main() {
     let count = smoothed_trie.get_count(rule.clone());
     let elapsed = start.elapsed();
     println!("Count: {}", count);
-    println!("Time taken: {:?}", elapsed);
+    println!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
     //let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
@@ -150,9 +150,14 @@ fn print_cache_sizes() {
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
     smoothed_trie.set_rule_set(NGramTrie::_calculate_ruleset(smoothed_trie.trie.n_gram_max_length));
+    println!("----- Testing smoothing -----");
+    let start = Instant::now();
     for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
         let rule = tokens[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
         let probabilities = smoothed_trie.get_prediction_probabilities(&rule);
         print_cache_sizes();
     }
+    let elapsed = start.elapsed();
+    let seq_words = tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1;
+    println!("Time taken for {:?} seq words predictions: {:.2?}", seq_words, elapsed);
 }

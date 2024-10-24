@@ -79,7 +79,7 @@ impl ModifiedBackoffKneserNey {
         let d2 = 2.0 - 3.0 * y * (n3 as f64 / n2 as f64);
         let d3 = 3.0 - 4.0 * y * (n4 as f64 / n3 as f64);
         let elapsed = start.elapsed();
-        println!("Time taken: {:?}", elapsed);
+        println!("Time taken: {:.2?}", elapsed);
         println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", d1, d2, d3, uniform);
         (d1, d2, d3, uniform)
     }
