@@ -1,97 +1,83 @@
-use fxhash::FxHashMap;
 use serde::{Serialize, Deserialize};
-use std::mem;
-use hashbrown::HashMap;
-use std::collections::BTreeMap;
-use boomphf::hashmap::BoomHashMap;
 use sorted_vector_map::SortedVectorMap;
-use rayon::prelude::*;
 use std::sync::Arc;
-use std::sync::RwLock;
-use std::sync::atomic::AtomicU32;
-use std::sync::atomic::Ordering;
+use quick_cache::sync::Cache;
+use crate::trie::Rule;
+
+//we are not using these
+const CACHE_SIZE: usize = 233*3*4835; // RULES*1.25
+const CACHE_SIZE_N: usize = 233*3; // RULES*1.25
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrieNode {
-    pub children: RwLock<SortedVectorMap<u16, Arc<TrieNode>>>, // changed from u32 to u16
-    pub count: AtomicU32
+    pub children: SortedVectorMap<u16, Arc<TrieNode>>, // changed from u32 to u16
+    pub count: u32,
+    // #[serde(skip)]
+    // pub cache_c: TrieNodeCache
+    // #[serde(skip)]
+    // pub cache_n: TrieNodeCacheN
 }
 
 impl TrieNode {
     pub fn new(capacity: Option<usize>) -> Self {
         TrieNode {
-            children: RwLock::new(SortedVectorMap::with_capacity(capacity.unwrap_or(0))),
-            count: AtomicU32::new(0),
+            children: SortedVectorMap::with_capacity(capacity.unwrap_or(0)),
+            count: 0,
+            // cache_c: TrieNodeCache::default()
+            // cache_n: TrieNodeCacheN::default()
         }
     }
 
-    pub fn merge(&self, other: Arc<TrieNode>) {
-        self.count.fetch_add(other.count.load(Ordering::SeqCst), Ordering::SeqCst);
-        for (key, other_child) in other.children.read().unwrap().iter() {
-            if let Some(child) = self.children.read().unwrap().get(key) {
-                child.merge(other_child.clone());
+    pub fn merge(&mut self, other: Arc<TrieNode>) {
+        self.count += other.count;
+        for (key, other_child) in other.children.iter() {
+            if let Some(child) = self.children.get_mut(key) {
+                Arc::get_mut(child).unwrap().merge(other_child.clone());
             } else {
-                self.children.write().unwrap().insert(*key, other_child.clone());
+                self.children.insert(*key, other_child.clone());
             }
         }
     }
 
-    pub fn insert(&self, n_gram: &[u16]) {
-        self.count.fetch_add(1, Ordering::SeqCst);
+    pub fn insert(&mut self, n_gram: &[u16]) {
+        self.count += 1;
         if n_gram.is_empty() {
             return;
         }
 
-        let first = n_gram[0];
-        let mut children = self.children.write().unwrap();
-
-        if let Some(child) = children.get(&first).cloned() {
-            // Release the write lock before recursing
-            drop(children);
-            child.insert(&n_gram[1..]);
+        if let Some(child) = self.children.get_mut(&n_gram[0]) {
+            Arc::get_mut(child).unwrap().insert(&n_gram[1..]);
         } else {
-            // Create a new child node
             let new_child = Arc::new(TrieNode::new(None));
-            children.insert(first, new_child.clone());
-            // Release the write lock before recursing
-            drop(children);
-            new_child.insert(&n_gram[1..]);
+            self.children.insert(n_gram[0], new_child);
+            Arc::get_mut(&mut self.children.get_mut(&n_gram[0]).unwrap()).unwrap().insert(&n_gram[1..]);
         }
     }
 
-    /// Shrinks the children vector to fit the number of elements. Starting from the leaf nodes.
-    pub fn shrink_to_fit(&self) {
-        // First, collect all child nodes while holding a read lock
-        let children: Vec<Arc<TrieNode>> = {
-            let read_guard = self.children.read().unwrap();
-            read_guard.values().cloned().collect()
-        };
+    pub fn shrink_to_fit(&mut self) {
+        self.children.shrink_to_fit();
 
-        // Now, shrink the children vector
-        self.children.write().unwrap().shrink_to_fit();
-
-        // Recursively call shrink_to_fit on each child node
-        for child in children {
-            child.shrink_to_fit();
+        for child in self.children.values_mut() {
+            Arc::get_mut(child).unwrap().shrink_to_fit();
         }
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<Arc<TrieNode>> {
-        match rule.len() {
+        // if let Some(cached_value) = self.cache_n.0.get(&Rule(rule.to_vec())) {
+        //     return cached_value.clone();
+        // }
+        let result = match rule.len() {
             0 => return vec![],
             1 => {
                 match rule[0] {
                     None => {
-                        // Clone the children while holding the read lock
-                        let children: Vec<Arc<TrieNode>> = self.children.read().unwrap().values().cloned().collect();
-                        return children;
+                        self.children.values().cloned().collect()
                     },
                     Some(token) => {
-                        // Clone the child while holding the read lock
-                        if let Some(child) = self.children.read().unwrap().get(&token).cloned() {
-                            return vec![child];
+                        if let Some(child) = self.children.get(&token).cloned() {
+                            vec![child]
                         } else {
-                            return vec![];
+                            vec![]
                         }
                     }
                 }
@@ -99,71 +85,83 @@ impl TrieNode {
             _ => {
                 match rule[0] {
                     None => {
-                        // Clone the children while holding the read lock
-                        let children: Vec<Arc<TrieNode>> = self.children.read().unwrap().values().cloned().collect();
-                        return children.into_iter().flat_map(|child| child.find_all_nodes(&rule[1..])).collect();
+                        self.children.values().into_iter()
+                            .flat_map(|child| child.find_all_nodes(&rule[1..]))
+                            .collect()
                     },
                     Some(token) => {
-                        // Clone the child while holding the read lock
-                        if let Some(child) = self.children.read().unwrap().get(&token).cloned() {
-                            return child.find_all_nodes(&rule[1..]);
+                        if let Some(child) = self.children.get(&token) {
+                            child.find_all_nodes(&rule[1..])
                         } else {
-                            return vec![];
+                            vec![]
                         }
                     }
                 }
             }
-        }
+        };
+        // self.cache_n.0.insert(Rule(rule.to_vec()), result.clone());
+        result
     }
     
-    pub fn get_count(&self, rule: &[Option<u16>]) -> u32 { // changed from &[Option<u32>] to &[Option<u16>]
-        if rule.len() == 0 { return self.count.load(Ordering::SeqCst); }
-        else {
+    pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
+        // if let Some(count) = self.cache_c.0.get(&Rule(rule.to_vec())) {
+        //     return count;
+        // }
+        let count = if rule.len() == 0 { self.count } else {
             match rule[0] {
-                None => self.children.read().unwrap().values()
+                None => self.children.values()
                     .map(|child| child.get_count(&rule[1..]))
                     .sum(),
-                Some(token) => self.children.read().unwrap().get(&token)
+                Some(token) => self.children.get(&token)
                     .map_or(0, |child| child.get_count(&rule[1..]))
             }
-        }
+        };
+        // self.cache_c.0.insert(Rule(rule.to_vec()), count);
+        count
     }
 
-    pub fn count_ns(&self) -> (u32, u32, u32, u32, u32) {
+    pub fn count_ns(&self) -> (u32, u32, u32, u32, u32, u32) {
         let mut n1 = 0;
         let mut n2 = 0;
         let mut n3 = 0;
         let mut n4 = 0;
         let mut nodes = 1;
-        match self.count.load(Ordering::SeqCst) {
+        let mut rest = 0;
+        match self.count {
             1 => n1 += 1,
             2 => n2 += 1,
             3 => n3 += 1,
             4 => n4 += 1,
-            _ => ()
+            _ => rest += 1
         }
-        for child in self.children.read().unwrap().values() {
-            let (c1, c2, c3, c4, _nodes) = child.count_ns();
+        for child in self.children.values() {
+            let (c1, c2, c3, c4, _nodes, _rest) = child.count_ns();
             n1 += c1;
             n2 += c2;
             n3 += c3;
             n4 += c4;
             nodes += _nodes;
+            rest += _rest;
         }
-        (n1, n2, n3, n4, nodes)
+        (n1, n2, n3, n4, nodes, rest)
     }
 
-    // pub fn semi_deep_clone(&self) -> TrieNode {
-    //     let mut cloned_node = TrieNode {
-    //         count: self.count,
-    //         children: SortedVectorMap::with_capacity(self.children.capacity()),
-    //     };
-    //     for (key, child) in &self.children {
-    //         cloned_node.children.insert(*key, Box::new( TrieNode {
-    //             children: SortedVectorMap::with_capacity(0),
-    //             count: child.count,
-    //         }));
-    //     }
-    //     cloned_node
-    // }
+}
+
+#[derive(Debug)]
+pub struct TrieNodeCache (pub Cache<Rule, u32>);
+
+impl Default for TrieNodeCache {
+    fn default() -> Self {
+        TrieNodeCache(Cache::new(CACHE_SIZE))
+    }
+}
+
+#[derive(Debug)]
+pub struct TrieNodeCacheN (pub Cache<Rule, Vec<Arc<TrieNode>>>);
+
+impl Default for TrieNodeCacheN {
+    fn default() -> Self {
+        TrieNodeCacheN(Cache::new(CACHE_SIZE_N))
+    }
 }

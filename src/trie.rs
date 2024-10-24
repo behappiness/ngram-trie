@@ -1,9 +1,7 @@
 pub mod trienode;
 
 use trienode::TrieNode;
-use crate::smoothing::Smoothing;
 use serde::{Serialize, Deserialize};
-use std::mem;
 use std::fs::{File, metadata};
 use std::io::{BufReader, BufWriter};
 use std::time::Instant;
@@ -11,40 +9,21 @@ use std::sync::{Arc, Mutex};
 use std::ops::Range;
 use bincode::{serialize_into, deserialize_from};
 use tqdm::tqdm;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
-use quick_cache::{sync::Cache, Equivalent};
+use quick_cache::sync::Cache;
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
-const CACHE_SIZE_C: usize = 233*7*2*32; //its related to the number of rules, 233*7*2*THREADS
-const CACHE_SIZE_N: usize = 233*7*32; //its related to the number of rules, 233*7*THREADS
+const CACHE_SIZE_C: usize = 233*16104; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_N: usize = 233*3; //(rules+25%) = RULES*1.25
 
 lazy_static! {
-    static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
-    pub static ref CACHE_N: Cache<Rule, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
+    pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
+    pub static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
 } 
-
-#[derive(Hash, Eq)]
-pub struct Rule(pub Vec<Option<u16>>);
-
-impl PartialEq for Rule {
-    fn eq(&self, other: &Self) -> bool {
-        if self.0.len() != other.0.len() {
-            return false;
-        }
-        for (a, b) in self.0.iter().zip(other.0.iter()) {
-            match (a, b) {
-                (Some(val_a), Some(val_b)) if val_a == val_b => continue,
-                (None, None) => continue,
-                _ => return false,
-            }
-        }
-        true
-    }
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NGramTrie {
@@ -67,13 +46,15 @@ impl NGramTrie {
     }
 
     pub fn insert(&mut self, n_gram: &[u16]) {
-        self.root.insert(n_gram);
+        let root = Arc::get_mut(&mut self.root).unwrap();
+        root.insert(n_gram);
     }
 
     pub fn merge(&mut self, other: &NGramTrie) {
         println!("----- Merging tries -----");
         let start = Instant::now();
-        self.root.merge(other.root.clone());
+        let root = Arc::get_mut(&mut self.root).unwrap();
+        root.merge(other.root.clone());
         let duration = start.elapsed();
         println!("Time taken to merge tries: {:?}", duration);
     }
@@ -81,36 +62,36 @@ impl NGramTrie {
     pub fn shrink_to_fit(&mut self) {
         println!("----- Shrinking to fit -----");
         let start = Instant::now();
-        self.root.shrink_to_fit();
+        let root = Arc::get_mut(&mut self.root).unwrap();
+        root.shrink_to_fit();
         let duration = start.elapsed();
         println!("Time taken to shrink to fit: {:?}", duration);
     }
 
-    pub fn save(&self, filename: &str) -> std::io::Result<()> {
+    pub fn save(&self, filename: &str) {
         println!("----- Saving trie -----");
         let start = Instant::now();
         let _file = filename.to_owned() + ".trie";
-        let file = File::create(&_file)?;
+        let file = File::create(&_file).expect("Unable to create file");
         let writer = BufWriter::new(file);
-        serialize_into(writer, self).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        serialize_into(writer, self).expect("Serialization failed");
         let duration = start.elapsed();
         println!("Time taken to save trie: {:?}", duration);
         let file_size = metadata(&_file).expect("Unable to get file metadata").len();
         let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
         println!("Size of saved file: {:.2} MB", file_size_mb);
-        Ok(())
     }
 
-    pub fn load(filename: &str) -> std::io::Result<Self> {
+    pub fn load(filename: &str) -> Self {
         println!("----- Loading trie -----");
         let start = Instant::now();
         let _file = filename.to_owned() + ".trie";
-        let file = File::open(_file)?;
+        let file = File::open(_file).expect("Unable to open file");
         let reader = BufReader::new(file);
-        let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let trie: NGramTrie = deserialize_from(reader).expect("Deserialization failed");
         let duration = start.elapsed();
         println!("Time taken to load trie: {:?}", duration);
-        Ok(trie)
+        trie
     }
 
     pub fn _preprocess_rule_context(tokens: &[u16], rule_context: Option<&str>) -> Vec<Option<u16>> {
@@ -173,35 +154,28 @@ impl NGramTrie {
             return cache;
         }
 
-        let mut count = 0;
-        if let Some(cache) = CACHE_N.get(&Rule(rule[..rule.len() - 1].to_vec())) {
-            count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
+        // if rule.len() == 0 { return self.root.count; }
+
+        let mut _count = 0;
+        if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
+            _count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         } else {
-            count = self.root.get_count(rule);
+            _count = self.root.get_count(rule);
         }
 
-        CACHE_C.insert(rule.to_vec(), count);
-        count
+        CACHE_C.insert(rule.to_vec(), _count);
+        _count
     }
 
-    //TODO: merge with unique_continuation_count?
     pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
-        if let Some(cache) = CACHE_N.get(&Rule(rule.clone())) {
+        if let Some(cache) = CACHE_N.get(&rule) {
             return cache.clone();
         }
         let nodes = self.root.find_all_nodes(&rule);
         let nodes_arc = Arc::new(nodes);
-        CACHE_N.insert(Rule(rule.clone()), nodes_arc.clone());
-        nodes_arc.clone()
+        CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
+        nodes_arc
     }
-
-    // pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
-    //     let mut unique = HashSet::<u16>::new();
-    //     for node in self.find_all_nodes(rule) {
-    //         unique.extend(node.children.keys());
-    //     }
-    //     unique
-    // }
 
     pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
         let x = tokens_size as f64;
@@ -299,14 +273,34 @@ impl NGramTrie {
 impl Hash for NGramTrie {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.n_gram_max_length.hash(state);
-        self.root.count.load(std::sync::atomic::Ordering::Relaxed).hash(state);
+        self.root.count.hash(state);
     }
 }
 
 impl PartialEq for NGramTrie {
     fn eq(&self, other: &Self) -> bool {
-        self.n_gram_max_length == other.n_gram_max_length && self.root.count.load(std::sync::atomic::Ordering::Relaxed) == other.root.count.load(std::sync::atomic::Ordering::Relaxed)
+        self.n_gram_max_length == other.n_gram_max_length && self.root.count == other.root.count
     }
 }
 
 impl Eq for NGramTrie {}
+
+#[derive(Hash, Eq)]
+pub struct Rule(pub Vec<Option<u16>>);
+
+impl PartialEq for Rule {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        for (a, b) in self.0.iter().zip(other.0.iter()) {
+            match (a, b) {
+                (Some(val_a), Some(val_b)) if val_a == val_b => continue,
+                (None, None) => continue,
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
