@@ -18,9 +18,9 @@ impl SmoothedTrie {
     }
 
     pub fn load(&mut self, filename: &str) {
-        self.reset_cache();
         self.trie = Arc::new(NGramTrie::load(filename).unwrap());
         self.smoothing.load(filename);
+        self.reset_cache();
     }
 
     pub fn save(&self, filename: &str) {
