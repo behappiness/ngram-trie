@@ -56,7 +56,7 @@ impl ModifiedBackoffKneserNey {
         let n3 = Arc::new(AtomicU32::new(0));
         let n4 = Arc::new(AtomicU32::new(0));
         let nodes = Arc::new(AtomicU32::new(0));
-        trie.root.children.par_iter().tqdm().for_each(|(_, child)| {
+        trie.root.children.read().unwrap().par_iter().tqdm().for_each(|(_, child)| {
             let (c1, c2, c3, c4, _nodes) = child.count_ns();
             n1.fetch_add(c1, Ordering::SeqCst);
             n2.fetch_add(c2, Ordering::SeqCst);
@@ -72,7 +72,7 @@ impl ModifiedBackoffKneserNey {
         let nodes = nodes.load(Ordering::SeqCst);
 
         println!("Nodes: {}", nodes);
-        let uniform = 1.0 / trie.root.children.len() as f64;
+        let uniform = 1.0 / trie.root.children.read().unwrap().len() as f64;
 
         if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {
             return (0.1, 0.2, 0.3, uniform);
@@ -155,8 +155,8 @@ pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u3
     let mut n2 = HashSet::<u16>::new();
     let mut n3 = HashSet::<u16>::new();
     for node in trie.find_all_nodes(rule.clone()).iter() {
-        for (key, child) in &node.children {
-            match child.count {
+        for (key, child) in node.children.read().unwrap().iter() {
+            match child.count.load(Ordering::SeqCst) {
                 1 => { n1.insert(*key); },
                 2 => { n2.insert(*key); },
                 _ => { n3.insert(*key); }

@@ -71,7 +71,7 @@ impl SmoothedTrie {
     pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
-        let prediction_probabilities = self.trie.root.children.par_iter().tqdm()
+        let prediction_probabilities = self.trie.root.children.read().unwrap().par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);
                 (*token, probabilities)

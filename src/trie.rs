@@ -24,7 +24,7 @@ const CACHE_SIZE_N: usize = 233*7*32; //its related to the number of rules, 233*
 
 lazy_static! {
     static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
-    pub static ref CACHE_N: Cache<Rule, Arc<Vec<TrieNode>>> = Cache::new(CACHE_SIZE_N);
+    pub static ref CACHE_N: Cache<Rule, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
 } 
 
 #[derive(Hash, Eq)]
@@ -46,9 +46,9 @@ impl PartialEq for Rule {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NGramTrie {
-    pub root: Box<TrieNode>,
+    pub root: Arc<TrieNode>,
     pub n_gram_max_length: u32
 }
 
@@ -61,7 +61,7 @@ impl Default for NGramTrie {
 impl NGramTrie {
     pub fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
         NGramTrie {
-            root: Box::new(TrieNode::new(root_capacity)),
+            root: Arc::new(TrieNode::new(root_capacity)),
             n_gram_max_length
         }
     }
@@ -73,7 +73,7 @@ impl NGramTrie {
     pub fn merge(&mut self, other: &NGramTrie) {
         println!("----- Merging tries -----");
         let start = Instant::now();
-        self.root.merge(&other.root);
+        self.root.merge(other.root.clone());
         let duration = start.elapsed();
         println!("Time taken to merge tries: {:?}", duration);
     }
@@ -185,15 +185,14 @@ impl NGramTrie {
     }
 
     //TODO: merge with unique_continuation_count?
-    pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<TrieNode>> {
+    pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
         if let Some(cache) = CACHE_N.get(&Rule(rule.clone())) {
             return cache.clone();
         }
         let nodes = self.root.find_all_nodes(&rule);
-        let nodes_clone: Vec<TrieNode> = nodes.iter().map(|&node| node.semi_deep_clone()).collect();
-        let nodes_clone_arc = Arc::new(nodes_clone);
-        CACHE_N.insert(Rule(rule.clone()), nodes_clone_arc.clone());
-        nodes_clone_arc.clone()
+        let nodes_arc = Arc::new(nodes);
+        CACHE_N.insert(Rule(rule.clone()), nodes_arc.clone());
+        nodes_arc.clone()
     }
 
     // pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
@@ -300,13 +299,13 @@ impl NGramTrie {
 impl Hash for NGramTrie {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.n_gram_max_length.hash(state);
-        self.root.count.hash(state);
+        self.root.count.load(std::sync::atomic::Ordering::Relaxed).hash(state);
     }
 }
 
 impl PartialEq for NGramTrie {
     fn eq(&self, other: &Self) -> bool {
-        self.n_gram_max_length == other.n_gram_max_length && self.root.count == other.root.count
+        self.n_gram_max_length == other.n_gram_max_length && self.root.count.load(std::sync::atomic::Ordering::Relaxed) == other.root.count.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

@@ -118,7 +118,7 @@ fn main() {
     //smoothed_trie.load("../170k_tokens");
 
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(7);
+    let mut rule_set = NGramTrie::_calculate_ruleset(5);
     smoothed_trie.set_rule_set(rule_set);
     
     // println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
