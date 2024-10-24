@@ -122,7 +122,7 @@ fn main() {
     //smoothed_trie.load("../170k_tokens");
 
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(7);
+    let mut rule_set = NGramTrie::_calculate_ruleset(6);
     smoothed_trie.set_rule_set(rule_set);
     
     println!("----- Getting rule count -----");
@@ -134,11 +134,12 @@ fn main() {
     println!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
-    //let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
 
     // 475m_tokens
-    let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
+    //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     test_seq_smoothing(&mut smoothed_trie, history);
+    println!("Rules: {:?}", smoothed_trie.rule_set);
 }
 
 fn print_cache_sizes() {
@@ -149,7 +150,7 @@ fn print_cache_sizes() {
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
-    smoothed_trie.set_rule_set(NGramTrie::_calculate_ruleset(smoothed_trie.trie.n_gram_max_length));
+    smoothed_trie.set_rule_set(NGramTrie::_calculate_ruleset(smoothed_trie.trie.n_gram_max_length - 1));
     println!("----- Testing smoothing -----");
     let start = Instant::now();
     for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {

@@ -148,6 +148,7 @@ impl NGramTrie {
         }
     
         ruleset.extend(hashmap.values().cloned());
+        ruleset.sort_by(|a, b| b.cmp(a));
         ruleset.sort_by(|a, b| a.len().cmp(&b.len()));
         ruleset
     }
