@@ -19,7 +19,7 @@ impl PySmoothedTrie {
     #[pyo3(signature = (n_gram_max_length, root_capacity=None))]
     fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
         PySmoothedTrie {
-            smoothed_trie: SmoothedTrie::new(NGramTrie::new(n_gram_max_length, root_capacity), Box::new(ModifiedBackoffKneserNey::new(&NGramTrie::new(n_gram_max_length, root_capacity)))),
+            smoothed_trie: SmoothedTrie::new(NGramTrie::new(n_gram_max_length, root_capacity), Box::new(ModifiedBackoffKneserNey::new(Arc::new(NGramTrie::new(n_gram_max_length, root_capacity))))),
         }
     }
 

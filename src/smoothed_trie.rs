@@ -8,8 +8,8 @@ use simple_tqdm::ParTqdm;
 use tqdm::Iter;
 
 pub struct SmoothedTrie {
-    trie: Arc<NGramTrie>,
-    smoothing: Box<dyn Smoothing>
+    pub trie: Arc<NGramTrie>,
+    pub smoothing: Box<dyn Smoothing>
 }
 
 impl SmoothedTrie {
@@ -18,6 +18,7 @@ impl SmoothedTrie {
     }
 
     pub fn load(&mut self, filename: &str) {
+        self.reset_cache();
         self.trie = Arc::new(NGramTrie::load(filename).unwrap());
         self.smoothing.load(filename);
     }
@@ -34,7 +35,7 @@ impl SmoothedTrie {
 
     pub fn fit(&mut self, tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) {
         self.trie = Arc::new(NGramTrie::fit(tokens, n_gram_max_length, root_capacity, max_tokens));
-        self.trie.init_cache();
+        self.reset_cache();
     }
 
     pub fn set_rule_set(&mut self, rule_set: Vec<String>) {
@@ -44,7 +45,8 @@ impl SmoothedTrie {
     }
 
     pub fn fit_smoothing(&mut self) {
-        self.smoothing = Box::new(ModifiedBackoffKneserNey::new(&self.trie));
+        self.smoothing.reset_cache();
+        self.smoothing = Box::new(ModifiedBackoffKneserNey::new(self.trie.clone()));
     }
 
     pub fn get_count(&self, rule: Vec<Option<u16>>) -> u32 {

@@ -38,9 +38,8 @@ pub struct ModifiedBackoffKneserNey {
 }
 
 impl ModifiedBackoffKneserNey {
-    pub fn new(trie: &NGramTrie) -> Self {
+    pub fn new(trie: Arc<NGramTrie>) -> Self {
         let (_d1, _d2, _d3, _uniform) = Self::calculate_d_values(trie);
-        Self::init_cache(_uniform);
         ModifiedBackoffKneserNey {
             d1: _d1,
             d2: _d2,
@@ -49,7 +48,7 @@ impl ModifiedBackoffKneserNey {
         }
     }
 
-    pub fn calculate_d_values(trie: &NGramTrie) -> (f64, f64, f64, f64) {
+    pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (f64, f64, f64, f64) {
         println!("----- Calculating d values -----");
         let start = Instant::now();
         let n1 = Arc::new(AtomicU32::new(0));
@@ -59,8 +58,10 @@ impl ModifiedBackoffKneserNey {
         let mut nodes = Vec::new();
         for i in 1..=trie.n_gram_max_length {
             let rule: Vec<Option<u16>> = vec![None; i as usize];
-            let nodes_arc = trie.find_all_nodes(&rule);
-            nodes.extend(nodes_arc.iter().cloned()); //TODO: there is a more efficient way to do this
+            let nodes_arc = trie.find_all_nodes(rule);
+            for node in (*nodes_arc).iter().cloned() {
+                nodes.push(node);
+            }
         }
 
         println!("Number of nodes: {}", nodes.len());
@@ -111,8 +112,8 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
-    pub fn init_cache(uniform: f64) {
-        CACHE.insert(vec![], uniform);
+    pub fn init_cache(&self) {
+        CACHE.insert(vec![], self.uniform);
     }
 
     
@@ -130,13 +131,12 @@ impl Smoothing for ModifiedBackoffKneserNey {
         let _file = filename.to_owned() + ".smoothing";
         let serialized = std::fs::read(_file).unwrap();
         *self = bincode::deserialize(&serialized).unwrap();
-        Self::init_cache(self.uniform);
     }
 
     fn reset_cache(&self) {
         CACHE.clear();
         CACHE_N.clear();
-        Self::init_cache(self.uniform);
+        self.init_cache();
     }
 
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
@@ -178,7 +178,7 @@ pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u3
     let mut n1 = HashSet::<u16>::new();
     let mut n2 = HashSet::<u16>::new();
     let mut n3 = HashSet::<u16>::new();
-    for node in trie.find_all_nodes(&rule).iter() {
+    for node in trie.find_all_nodes(rule.clone()).iter() {
         for (key, child) in &node.children {
             match child.count {
                 1 => { n1.insert(*key); },

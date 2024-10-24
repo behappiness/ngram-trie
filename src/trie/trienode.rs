@@ -69,7 +69,7 @@ impl TrieNode {
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<&TrieNode> { // changed from &[Option<u32>] to &[Option<u16>]
-        if rule.len() == 0 { return vec![self]; }
+        if rule.is_empty() { return vec![self]; }
         else {
             let mut nodes = Vec::<&TrieNode>::new();
             match rule[0] {

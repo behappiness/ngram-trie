@@ -15,7 +15,7 @@ use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
-use quick_cache::sync::Cache;
+use quick_cache::{sync::Cache, Equivalent};
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
@@ -24,8 +24,27 @@ const CACHE_SIZE_N: usize = 2_000; //its related to the number of rules, 233*7
 
 lazy_static! {
     static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
-    static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<TrieNode>>> = Cache::new(CACHE_SIZE_N);
+    pub static ref CACHE_N: Cache<Rule, Arc<Vec<TrieNode>>> = Cache::new(CACHE_SIZE_N);
 } 
+
+#[derive(Hash, Eq)]
+pub struct Rule(pub Vec<Option<u16>>);
+
+impl PartialEq for Rule {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+        for (a, b) in self.0.iter().zip(other.0.iter()) {
+            match (a, b) {
+                (Some(val_a), Some(val_b)) if val_a == val_b => continue,
+                (None, None) => continue,
+                _ => return false,
+            }
+        }
+        true
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NGramTrie {
@@ -104,7 +123,6 @@ impl NGramTrie {
         let trie: NGramTrie = deserialize_from(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         println!("Time taken to load trie: {:?}", duration);
-        trie.init_cache();
         trie.size_in_ram();
         Ok(trie)
     }
@@ -177,7 +195,7 @@ impl NGramTrie {
         }
 
         let mut count = 0;
-        if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
+        if let Some(cache) = CACHE_N.get(&Rule(rule[..rule.len() - 1].to_vec())) {
             count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         } else {
             count = self.root.get_count(rule);
@@ -188,15 +206,15 @@ impl NGramTrie {
     }
 
     //TODO: merge with unique_continuation_count?
-    pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Arc<Vec<TrieNode>> {
-        if let Some(cache) = CACHE_N.get(rule) {
+    pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<TrieNode>> {
+        if let Some(cache) = CACHE_N.get(&Rule(rule.clone())) {
             return cache.clone();
         }
-        let nodes = self.root.find_all_nodes(rule);
+        let nodes = self.root.find_all_nodes(&rule);
         let nodes_clone: Vec<TrieNode> = nodes.iter().map(|&node| node.semi_deep_clone()).collect();
         let nodes_clone_arc = Arc::new(nodes_clone);
-        CACHE_N.insert(rule.to_vec(), nodes_clone_arc.clone());
-        nodes_clone_arc
+        CACHE_N.insert(Rule(rule.clone()), nodes_clone_arc.clone());
+        nodes_clone_arc.clone()
     }
 
     // pub fn unique_continuations(&self, rule: &[Option<u16>]) -> HashSet<u16> {
@@ -229,7 +247,6 @@ impl NGramTrie {
         }
         let duration = start.elapsed();
         println!("Time taken to fit trie: {:?}", duration);
-        trie.init_cache();
         trie.shrink_to_fit();
         trie.size_in_ram();
         trie
@@ -267,7 +284,6 @@ impl NGramTrie {
         println!("Time taken to fit trie multithreaded: {:?}", duration);
         
         let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
-        root_trie.init_cache();
         root_trie.shrink_to_fit();
         root_trie.size_in_ram();
         root_trie
@@ -294,7 +310,7 @@ impl NGramTrie {
     
     pub fn init_cache(&self) {
         CACHE_C.insert(vec![], self.root.get_count(&vec![]));
-        self.find_all_nodes(&vec![]);
+        self.find_all_nodes(vec![]);
     }
 
     pub fn reset_cache(&self) {
