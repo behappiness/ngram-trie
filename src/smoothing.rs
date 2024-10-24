@@ -55,40 +55,12 @@ impl ModifiedBackoffKneserNey {
         let n2 = Arc::new(AtomicU32::new(0));
         let n3 = Arc::new(AtomicU32::new(0));
         let n4 = Arc::new(AtomicU32::new(0));
-        let mut nodes = Vec::new();
-        for i in 1..=trie.n_gram_max_length {
-            let rule: Vec<Option<u16>> = vec![None; i as usize];
-            let nodes_arc = trie.find_all_nodes(rule);
-            for node in (*nodes_arc).iter().cloned() {
-                nodes.push(node);
-            }
-        }
-
-        println!("Number of nodes: {}", nodes.len());
-
-        let batch_size = BATCH_SIZE;
-        let num_batches = (nodes.len() as f64 / batch_size as f64).ceil() as usize;
-
-        (0..num_batches).into_par_iter().tqdm().for_each(|batch| {
-            let start = batch * batch_size;
-            let end = (start + batch_size).min(nodes.len());
-            let mut local_n1 = 0;
-            let mut local_n2 = 0;
-            let mut local_n3 = 0;
-            let mut local_n4 = 0;
-            for node in &nodes[start..end] {
-                match node.count {
-                    1 => local_n1 += 1,
-                    2 => local_n2 += 1,
-                    3 => local_n3 += 1,
-                    4 => local_n4 += 1,
-                    _ => ()
-                }
-            }
-            n1.fetch_add(local_n1 as u32, Ordering::SeqCst);
-            n2.fetch_add(local_n2 as u32, Ordering::SeqCst);
-            n3.fetch_add(local_n3 as u32, Ordering::SeqCst);
-            n4.fetch_add(local_n4 as u32, Ordering::SeqCst);
+        trie.root.children.par_iter().for_each(|(_, child)| {
+            let (c1, c2, c3, c4) = child.count_ns();
+            n1.fetch_add(c1, Ordering::SeqCst);
+            n2.fetch_add(c2, Ordering::SeqCst);
+            n3.fetch_add(c3, Ordering::SeqCst);
+            n4.fetch_add(c4, Ordering::SeqCst);
         });
 
         let n1 = n1.load(Ordering::SeqCst);

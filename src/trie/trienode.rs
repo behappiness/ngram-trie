@@ -101,6 +101,28 @@ impl TrieNode {
         }
     }
 
+    pub fn count_ns(&self) -> (u32, u32, u32, u32) {
+        let mut n1 = 0;
+        let mut n2 = 0;
+        let mut n3 = 0;
+        let mut n4 = 0;
+        match self.count {
+            1 => n1 += 1,
+            2 => n2 += 1,
+            3 => n3 += 1,
+            4 => n4 += 1,
+            _ => ()
+        }
+        for child in self.children.values() {
+            let (c1, c2, c3, c4) = child.count_ns();
+            n1 += c1;
+            n2 += c2;
+            n3 += c3;
+            n4 += c4;
+        }
+        (n1, n2, n3, n4)
+    }
+
     pub fn semi_deep_clone(&self) -> TrieNode {
         let mut cloned_node = TrieNode {
             count: self.count,
