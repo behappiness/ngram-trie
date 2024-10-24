@@ -115,6 +115,8 @@ impl Smoothing for ModifiedBackoffKneserNey {
             return cached_value;
         }
 
+        let recursive = self.smoothing(trie.clone(), &rule[1..]);
+
         //let w_i = &rule[rule.len() - 1];
         let w_i_minus_1 = &rule[..rule.len() - 1];
 
@@ -132,7 +134,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / c_i_minus_1 as f64;
 
-        let result = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64 + gamma * self.smoothing(trie, &rule[1..]);
+        let result = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64 + gamma * recursive;
         CACHE_S_C.insert(rule.to_vec(), result);
         result
     }

@@ -158,7 +158,9 @@ impl NGramTrie {
         // if rule.len() == 0 { return self.root.count; }
 
         let mut _count = 0;
-        if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
+        if let Some(cache) = CACHE_N.get(rule) {
+            _count = cache.iter().map(|node| node.count).sum();
+        } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
             _count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         } else {
             _count = self.root.get_count(rule);
@@ -171,6 +173,11 @@ impl NGramTrie {
     pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
         if let Some(cache) = CACHE_N.get(&rule) {
             return cache.clone();
+        } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
+            let nodes: Vec<Arc<TrieNode>> = cache.iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
+            let nodes_arc = Arc::new(nodes);
+            CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
+            return nodes_arc;
         }
         let nodes = self.root.find_all_nodes(&rule);
         let nodes_arc = Arc::new(nodes);
@@ -261,7 +268,9 @@ impl NGramTrie {
     
     pub fn init_cache(&self) {
         CACHE_C.insert(vec![], self.root.get_count(&vec![]));
-        self.find_all_nodes(vec![]);
+        let nodes = self.root.find_all_nodes(&vec![]);
+        let nodes_arc = Arc::new(nodes);
+        CACHE_N.insert(vec![], nodes_arc.clone());
     }
 
     pub fn reset_cache(&self) {

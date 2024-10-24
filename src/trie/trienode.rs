@@ -3,6 +3,7 @@ use sorted_vector_map::SortedVectorMap;
 use quick_cache::sync::Cache;
 use crate::trie::Rule;
 use rclite::Arc;
+use rayon::prelude::*;
 
 //we are not using these
 const CACHE_SIZE: usize = 233*3*4835; // RULES*1.25
@@ -79,8 +80,8 @@ impl TrieNode {
             _ => {
                 match rule[0] {
                     None => {
-                        self.children.values().into_iter()
-                            .flat_map(|child| child.find_all_nodes(&rule[1..]))
+                        self.children.par_iter()
+                            .flat_map(|(_, child)| child.find_all_nodes(&rule[1..]))
                             .collect()
                     },
                     Some(token) => {
@@ -103,8 +104,8 @@ impl TrieNode {
         // }
         let count = if rule.len() == 0 { self.count } else {
             match rule[0] {
-                None => self.children.values()
-                    .map(|child| child.get_count(&rule[1..]))
+                None => self.children.par_iter()
+                    .map(|(_, child)| child.get_count(&rule[1..]))
                     .sum(),
                 Some(token) => self.children.get(&token)
                     .map_or(0, |child| child.get_count(&rule[1..]))

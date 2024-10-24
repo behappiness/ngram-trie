@@ -122,7 +122,7 @@ fn main() {
     //smoothed_trie.load("../170k_tokens");
 
     //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(5);
+    let mut rule_set = NGramTrie::_calculate_ruleset(7);
     smoothed_trie.set_rule_set(rule_set);
     
     println!("----- Getting rule count -----"); //4107, 1253, 375, 4230, 1140, 3042 ;;; 510, 224, 290, 185, 1528, 135
@@ -134,7 +134,10 @@ fn main() {
     println!("Time taken: {:?}", elapsed);
     
     let probabilities = smoothed_trie.get_prediction_probabilities(&vec![4107, 1253, 375, 4230, 1140, 3042]);
-        
+    print_cache_sizes();
+}
+
+fn print_cache_sizes() {
     println!("CACHE_S_C size: {}", CACHE_S_C.len());
     println!("CACHE_S_N size: {}", CACHE_S_N.len());
     println!("CACHE_C size: {}", CACHE_C.len());
