@@ -4,17 +4,11 @@
 
 ## Installation Rust
 
-1. Clone the required repositories:
-
-    ```bash
-    git clone https://github.com/behappiness/ngram-trie
-    ```
-
-2. Include it in the Cargo.toml:
+1. Include it in the Cargo.toml:
 
     ```toml
     [dependencies]
-    ngram-trie = { path = "path/to/ngram-trie" }
+    ngram-trie = { git = "https://github.com/behappiness/ngram-trie" }
     ```
 
 ## Installation Python
