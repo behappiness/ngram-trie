@@ -42,6 +42,7 @@ impl SmoothedTrie {
     pub fn set_rule_set(&mut self, rule_set: Vec<String>) {
         println!("----- Setting rule set -----");
         self.rule_set = rule_set;
+        self.rule_set.sort_by(|a, b| b.cmp(a));
         self.rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
         println!("Rule set: {:?}", self.rule_set.len());
     }

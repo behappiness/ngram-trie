@@ -10,7 +10,7 @@ use rclite::Arc;
 use std::ops::Range;
 use bincode::{serialize_into, deserialize_from};
 use tqdm::tqdm;
-use hashbrown::HashMap;
+use sorted_vector_map::SortedVectorMap;
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
@@ -20,8 +20,8 @@ const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
 // the dataset size matters as well
-const CACHE_SIZE_C: usize = 233*16104*4; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_N: usize = 233*3*4; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_C: usize = 233*16104*32; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_N: usize = 233*3*32; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
@@ -133,7 +133,7 @@ impl NGramTrie {
     
         let mut tokens = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".to_string();
         tokens.truncate(n_gram_max_length as usize);
-        let mut hashmap = HashMap::<String, String>::new();
+        let mut hashmap = SortedVectorMap::<String, String>::new();
     
         for comb in combinations {
             let mut key = "".to_string();
@@ -297,23 +297,3 @@ impl PartialEq for NGramTrie {
 }
 
 impl Eq for NGramTrie {}
-
-#[derive(Hash, Eq)]
-pub struct Rule(pub Vec<Option<u16>>);
-
-impl PartialEq for Rule {
-    fn eq(&self, other: &Self) -> bool {
-        if self.0.len() != other.0.len() {
-            return false;
-        }
-        for (a, b) in self.0.iter().zip(other.0.iter()) {
-            match (a, b) {
-                (Some(val_a), Some(val_b)) if val_a == val_b => continue,
-                (None, None) => continue,
-                _ => return false,
-            }
-        }
-        true
-    }
-}
-

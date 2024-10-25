@@ -1,13 +1,7 @@
 use serde::{Serialize, Deserialize};
 use sorted_vector_map::SortedVectorMap;
-use quick_cache::sync::Cache;
-use crate::trie::Rule;
 use rclite::Arc;
 use rayon::prelude::*;
-
-//we are not using these
-const CACHE_SIZE: usize = 233*3*4835; // RULES*1.25
-const CACHE_SIZE_N: usize = 233*3; // RULES*1.25
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrieNode {
@@ -58,9 +52,6 @@ impl TrieNode {
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<Arc<TrieNode>> {
-        // if let Some(cached_value) = self.cache_n.0.get(&Rule(rule.to_vec())) {
-        //     return cached_value.clone();
-        // }
         let result = match rule.len() {
             0 => return vec![],
             1 => {
@@ -94,14 +85,10 @@ impl TrieNode {
                 }
             }
         };
-        // self.cache_n.0.insert(Rule(rule.to_vec()), result.clone());
         result
     }
     
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
-        // if let Some(count) = self.cache_c.0.get(&Rule(rule.to_vec())) {
-        //     return count;
-        // }
         let count = if rule.len() == 0 { self.count } else {
             match rule[0] {
                 None => self.children.par_iter()
@@ -111,7 +98,6 @@ impl TrieNode {
                     .map_or(0, |child| child.get_count(&rule[1..]))
             }
         };
-        // self.cache_c.0.insert(Rule(rule.to_vec()), count);
         count
     }
 
@@ -141,22 +127,4 @@ impl TrieNode {
         (n1, n2, n3, n4, nodes, rest)
     }
 
-}
-
-#[derive(Debug)]
-pub struct TrieNodeCache (pub Cache<Rule, u32>);
-
-impl Default for TrieNodeCache {
-    fn default() -> Self {
-        TrieNodeCache(Cache::new(CACHE_SIZE))
-    }
-}
-
-#[derive(Debug)]
-pub struct TrieNodeCacheN (pub Cache<Rule, Vec<Arc<TrieNode>>>);
-
-impl Default for TrieNodeCacheN {
-    fn default() -> Self {
-        TrieNodeCacheN(Cache::new(CACHE_SIZE_N))
-    }
 }

@@ -7,11 +7,11 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
-use hashbrown::HashSet;
+use sorted_vector_map::SortedVectorSet;
 
 // the dataset size matters as well
-const CACHE_SIZE_S_C: usize = 233*16104*4; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_S_N: usize = 233*3*4; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_S_C: usize = 233*16104*32; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_S_N: usize = 233*3*32; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_S_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_S_C);
@@ -84,11 +84,30 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
+    pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
+        if let Some(cached_value) = CACHE_S_N.get(&rule) {
+            return cached_value;
+        }
+        let mut n1 = SortedVectorSet::<u16>::new();
+        let mut n2 = SortedVectorSet::<u16>::new();
+        let mut n3 = SortedVectorSet::<u16>::new();
+        for node in trie.find_all_nodes(rule.clone()).iter() {
+            for (key, child) in node.children.iter() {
+                match child.count {
+                    1 => { n1.insert(*key); },
+                    2 => { n2.insert(*key); },
+                    _ => { n3.insert(*key); }
+                }
+            }
+        }
+        let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+        CACHE_S_N.insert(rule, result);
+        result
+    }
+
     pub fn init_cache(&self) {
         CACHE_S_C.insert(vec![], self.uniform);
     }
-
-    
 }
 
 //From Chen & Goodman 1998
@@ -121,7 +140,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
         //let w_i = &rule[rule.len() - 1];
         let w_i_minus_1 = &rule[..rule.len() - 1];
 
-        let (n1, n2, n3) = count_unique_ns(trie.clone(), w_i_minus_1.to_vec());
+        let (n1, n2, n3) = Self::count_unique_ns(trie.clone(), w_i_minus_1.to_vec());
 
         let c_i_minus_1 = trie.get_count(&w_i_minus_1);
         let c_i = trie.get_count(&rule);
@@ -139,29 +158,4 @@ impl Smoothing for ModifiedBackoffKneserNey {
         CACHE_S_C.insert(rule.to_vec(), result);
         result
     }
-}
-
-// #[cached(
-//     key = "Vec<Option<u16>>", 
-//     convert = r#"{ rule.clone() }"#
-// )]
-pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
-    if let Some(cached_value) = CACHE_S_N.get(&rule) {
-        return cached_value;
-    }
-    let mut n1 = HashSet::<u16>::new();
-    let mut n2 = HashSet::<u16>::new();
-    let mut n3 = HashSet::<u16>::new();
-    for node in trie.find_all_nodes(rule.clone()).iter() {
-        for (key, child) in node.children.iter() {
-            match child.count {
-                1 => { n1.insert(*key); },
-                2 => { n2.insert(*key); },
-                _ => { n3.insert(*key); }
-            }
-        }
-    }
-    let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
-    CACHE_S_N.insert(rule, result);
-    result
 }
