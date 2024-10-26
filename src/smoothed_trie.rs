@@ -5,6 +5,7 @@ use std::time::Instant;
 use rayon::prelude::*;
 use crate::smoothing::ModifiedBackoffKneserNey;
 use simple_tqdm::ParTqdm;
+use rayon::ThreadPoolBuilder;
 
 pub struct SmoothedTrie {
     pub trie: Arc<NGramTrie>,
@@ -72,6 +73,7 @@ impl SmoothedTrie {
         println!("----- Getting prediction probabilities -----");
         let start = Instant::now();
         assert!(history.len() < self.trie.n_gram_max_length as usize, "History length must be less than the n-gram max length");
+        let _asd = self.probability_for_token(history, history[0]);
         let prediction_probabilities = self.trie.root.children.par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);
