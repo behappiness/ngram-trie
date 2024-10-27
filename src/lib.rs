@@ -5,8 +5,8 @@ pub mod smoothed_trie;
 use pyo3::prelude::*;
 use rclite::Arc;
 use trie::NGramTrie;
-use smoothing::ModifiedBackoffKneserNey;
 use smoothed_trie::SmoothedTrie;
+use pyo3_log;
 
 #[pyclass]
 struct PySmoothedTrie {
@@ -19,7 +19,7 @@ impl PySmoothedTrie {
     #[pyo3(signature = (n_gram_max_length, root_capacity=None))]
     fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
         PySmoothedTrie {
-            smoothed_trie: SmoothedTrie::new(NGramTrie::new(n_gram_max_length, root_capacity), Box::new(ModifiedBackoffKneserNey::new(Arc::new(NGramTrie::new(n_gram_max_length, root_capacity))))),
+            smoothed_trie: SmoothedTrie::new(NGramTrie::new(n_gram_max_length, root_capacity), None),
         }
     }
 
@@ -35,9 +35,9 @@ impl PySmoothedTrie {
         self.smoothed_trie.reset_cache();
     }
 
-    #[pyo3(signature = (tokens, n_gram_max_length, root_capacity=None, max_tokens=None))]
-    fn fit(&mut self, tokens: Vec<u16>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) {
-        self.smoothed_trie.fit(Arc::new(tokens), n_gram_max_length, root_capacity, max_tokens);
+    #[pyo3(signature = (tokens, n_gram_max_length, root_capacity=None, max_tokens=None, smoothing_name=None))]
+    fn fit(&mut self, tokens: Vec<u16>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>, smoothing_name: Option<String>) {
+        self.smoothed_trie.fit(Arc::new(tokens), n_gram_max_length, root_capacity, max_tokens, smoothing_name);
     }
 
     fn set_rule_set(&mut self, rule_set: Vec<String>) {
@@ -48,8 +48,13 @@ impl PySmoothedTrie {
         self.smoothed_trie.get_count(rule)
     }
 
-    fn fit_smoothing(&mut self) {
-        self.smoothed_trie.fit_smoothing();
+    #[pyo3(signature = (smoothing_name=None))]
+    fn fit_smoothing(&mut self, smoothing_name: Option<String>) {
+        self.smoothed_trie.fit_smoothing(smoothing_name);
+    }
+
+    fn debug_cache_sizes(&self) {
+        self.smoothed_trie.debug_cache_sizes();
     }
 
     fn get_prediction_probabilities(&self, history: Vec<u16>) -> Vec<(u16, Vec<(String, f64)>)> {
@@ -63,6 +68,7 @@ impl PySmoothedTrie {
 
 #[pymodule]
 fn ngram_trie(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    pyo3_log::init();
     m.add_class::<PySmoothedTrie>()?;
     Ok(())
 }

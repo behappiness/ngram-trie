@@ -9,13 +9,12 @@ use std::sync::Mutex;
 use rclite::Arc;
 use std::ops::Range;
 use bincode::{serialize_into, deserialize_from};
-use tqdm::tqdm;
 use sorted_vector_map::SortedVectorMap;
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
 use quick_cache::sync::Cache;
-
+use log::{info, error, debug};
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
@@ -54,53 +53,67 @@ impl NGramTrie {
     }
 
     pub fn merge(&mut self, other: &NGramTrie) {
-        println!("----- Merging tries -----");
+        info!("----- Merging tries -----");
         let start = Instant::now();
         let root = Arc::get_mut(&mut self.root).unwrap();
         root.merge(other.root.clone());
         let duration = start.elapsed();
-        println!("Time taken to merge tries: {:.2?}", duration);
+        debug!("Time taken to merge tries: {:.2?}", duration);
     }
 
     pub fn shrink_to_fit(&mut self) {
-        println!("----- Shrinking to fit -----");
+        info!("----- Shrinking trie -----");
         let start = Instant::now();
         let root = Arc::get_mut(&mut self.root).unwrap();
         root.shrink_to_fit();
         let duration = start.elapsed();
-        println!("Time taken to shrink to fit: {:.2?}", duration);
+        info!("Time taken to shrink to fit: {:.2?}", duration);
     }
 
     pub fn save(&self, filename: &str) {
-        println!("----- Saving trie -----");
+        info!("----- Saving trie -----");
         let start = Instant::now();
         let _file = filename.to_owned() + ".trie";
-        let file = File::create(&_file).expect("Unable to create file");
+        let file = File::create(&_file).unwrap_or_else(|e| {
+            error!("Unable to create file {}: {}", &_file, e);
+            panic!("Unable to create file");
+        });
         let writer = BufWriter::new(file);
-        serialize_into(writer, self).expect("Serialization failed");
+        if let Err(e) = serialize_into(writer, self) {
+            error!("Serialization failed: {}", e);
+            panic!("Serialization failed");
+        }
         let duration = start.elapsed();
-        println!("Time taken to save trie: {:.2?}", duration);
-        let file_size = metadata(&_file).expect("Unable to get file metadata").len();
+        info!("Time taken to save trie: {:.2?}", duration);
+        let file_size = metadata(&_file).unwrap_or_else(|e| {
+            error!("Unable to get file metadata {}: {}", &_file, e);
+            panic!("Unable to get file metadata");
+        }).len();
         let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
-        println!("Size of saved file: {:.2} MB", file_size_mb);
+        info!("Size of saved file: {:.2} MB", file_size_mb);
     }
 
     pub fn load(filename: &str) -> Self {
-        println!("----- Loading trie -----");
+        info!("----- Loading trie -----");
         let start = Instant::now();
         let _file = filename.to_owned() + ".trie";
-        let file = File::open(_file).expect("Unable to open file");
+        let file = File::open(&_file).unwrap_or_else(|e| {
+            error!("Unable to open file {}: {}", &_file, e);
+            panic!("Unable to open file");
+        });
         let reader = BufReader::new(file);
-        let trie: NGramTrie = deserialize_from(reader).expect("Deserialization failed");
+        let trie: NGramTrie = deserialize_from(reader).unwrap_or_else(|e| {
+            error!("Deserialization failed: {}", e);
+            panic!("Deserialization failed");
+        });
         let duration = start.elapsed();
-        println!("Time taken to load trie: {:.2?}", duration);
+        info!("Time taken to load trie: {:.2?}", duration);
         trie
     }
 
     pub fn _preprocess_rule_context(tokens: &[u16], rule_context: Option<&str>) -> Vec<Option<u16>> {
         let mut result = Vec::new();
         if let Some(rule_context) = rule_context {
-            assert!(tokens.len() >= rule_context.len(), "Tokens length must be at least as big as rule context length");
             let diff = tokens.len() - rule_context.len();
             for (&token, rule) in tokens[diff..].iter().zip(rule_context.chars()) {
                 match rule {
@@ -158,8 +171,6 @@ impl NGramTrie {
             return cache;
         }
 
-        // if rule.len() == 0 { return self.root.count; }
-
         let mut _count = 0;
         if let Some(cache) = CACHE_N.get(rule) {
             _count = cache.par_iter().map(|node| node.count).sum();
@@ -181,11 +192,12 @@ impl NGramTrie {
             let nodes_arc = Arc::new(nodes);
             CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
             return nodes_arc;
+        } else {
+            let nodes = self.root.find_all_nodes(&rule);
+            let nodes_arc = Arc::new(nodes);
+            CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
+            nodes_arc
         }
-        let nodes = self.root.find_all_nodes(&rule);
-        let nodes_arc = Arc::new(nodes);
-        CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
-        nodes_arc
     }
 
     pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
@@ -193,29 +205,29 @@ impl NGramTrie {
         let y = 0.0021 * x.powf(0.8525);
         let _x = (y / 0.0021).powf(1.0 / 0.8525) as f64; //how many can be fit in RAM
         let t = (2.8072 * x / 1_000_000.0 - 0.124) / 60.0; //how long it will take to fit
-        println!("Expected time for {} tokens: {:.2} min", tokens_size, t);
-        println!("Expected ram usage for {} tokens: {:.2} MB", tokens_size, y);
+        info!("Expected time for {} tokens: {:.2} min", tokens_size, t);
+        info!("Expected ram usage for {} tokens: {:.2} MB", tokens_size, y);
         (t, y)
     }
     
     pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
-        println!("----- Trie fitting -----");
+        info!("----- Trie fitting -----");
         let tokens_size = max_tokens.unwrap_or(tokens.len());
         NGramTrie::estimate_time_and_ram(tokens_size);
         let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
         let start = Instant::now();
-        for i in tqdm(0..max_tokens - n_gram_max_length as usize + 1) {
+        for i in 0..max_tokens - n_gram_max_length as usize + 1 {
             trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
         let duration = start.elapsed();
-        println!("Time taken to fit trie: {:.2?}", duration);
+        info!("Time taken to fit trie: {:.2?}", duration);
         trie.shrink_to_fit();
         trie
     }
 
     pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
-        println!("----- Trie fitting multithreaded -----");
+        info!("----- Trie fitting multithreaded -----");
         let root_trie = Arc::new(Mutex::new(NGramTrie::new(n_gram_max_length, root_capacity)));
         let tokens_size = max_tokens.unwrap_or(tokens.len());
         NGramTrie::estimate_time_and_ram(tokens_size);
@@ -237,13 +249,13 @@ impl NGramTrie {
                 trie.insert(&tokens[i..i + n_gram_max_length as usize]);
             }
             let duration_fit = start_fit.elapsed();
-            println!("Time taken to fit trie: {:.2?}", duration_fit);
+            debug!("Time taken to fit trie: {:.2?}", duration_fit);
             trie.shrink_to_fit();
             let mut root_trie = root_trie.lock().unwrap();
             root_trie.merge(trie);
         });
         let duration = start.elapsed();
-        println!("Time taken to fit trie multithreaded: {:.2?}", duration);
+        info!("Time taken to fit trie multithreaded: {:.2?}", duration);
         
         let mut root_trie = Arc::try_unwrap(root_trie).unwrap().into_inner().unwrap();
         root_trie.shrink_to_fit();
@@ -251,21 +263,21 @@ impl NGramTrie {
     }
 
     pub fn load_json(filename: &str, max_tokens: Option<usize>) -> std::io::Result<Arc<Vec<u16>>> {
-        println!("----- Loading tokens -----");
+        info!("----- Loading tokens -----");
         let file = File::open(filename)?;
         let reader = BufReader::new(file);
         let start = std::time::Instant::now();
         let mut tokens: Vec<u16> = serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
-        println!("Time taken to load tokens: {:.2?}", duration);
-        println!("Size of tokens in RAM: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
+        info!("Time taken to load tokens: {:.2?}", duration);
+        debug!("Size of tokens in RAM before truncation: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
         if let Some(max) = max_tokens {
             if max < tokens.len() {
                 tokens.truncate(max);
             }
         }
-        println!("Size of tokens in RAM after truncation: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
-        println!("Tokens loaded: {}", tokens.len());
+        info!("Size of tokens in RAM: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
+        info!("Tokens loaded: {}", tokens.len());
         Ok(Arc::new(tokens))
     }
     
@@ -277,6 +289,7 @@ impl NGramTrie {
     }
 
     pub fn reset_cache(&self) {
+        info!("----- Resetting trie cache -----");
         CACHE_C.clear();
         CACHE_N.clear();
         self.init_cache();

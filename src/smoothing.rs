@@ -1,5 +1,4 @@
 use crate::trie::NGramTrie;
-use simple_tqdm::ParTqdm;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
 use rclite::Arc;
@@ -8,6 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
 use sorted_vector_map::SortedVectorSet;
+use log::{info, debug};
 
 // the dataset size matters as well
 const CACHE_SIZE_S_C: usize = 233*16104*32; //(rules+25%)*keys = RULES*KEYS
@@ -45,20 +45,24 @@ impl ModifiedBackoffKneserNey {
     }
 
     pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (f64, f64, f64, f64) {
-        println!("----- Calculating d values -----");
+        if trie.root.children.len() == 0 {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+        info!("----- Calculating d values for smoothing -----");
         let start = Instant::now();
         let n1 = Arc::new(AtomicU32::new(0));
         let n2 = Arc::new(AtomicU32::new(0));
         let n3 = Arc::new(AtomicU32::new(0));
         let n4 = Arc::new(AtomicU32::new(0));
         let nodes = Arc::new(AtomicU32::new(0));
-        trie.root.children.par_iter().tqdm().for_each(|(_, child)| {
-            let (c1, c2, c3, c4, _nodes, _rest) = child.count_ns();
-            n1.fetch_add(c1, Ordering::SeqCst);
-            n2.fetch_add(c2, Ordering::SeqCst);
-            n3.fetch_add(c3, Ordering::SeqCst);
-            n4.fetch_add(c4, Ordering::SeqCst);
-            nodes.fetch_add(_nodes, Ordering::SeqCst);
+        trie.root.children.par_iter()//.tqdm()
+            .for_each(|(_, child)| {
+                let (c1, c2, c3, c4, _nodes, _rest) = child.count_ns();
+                n1.fetch_add(c1, Ordering::SeqCst);
+                n2.fetch_add(c2, Ordering::SeqCst);
+                n3.fetch_add(c3, Ordering::SeqCst);
+                n4.fetch_add(c4, Ordering::SeqCst);
+                nodes.fetch_add(_nodes, Ordering::SeqCst);
         });
 
         let n1 = n1.load(Ordering::SeqCst);
@@ -67,7 +71,7 @@ impl ModifiedBackoffKneserNey {
         let n4 = n4.load(Ordering::SeqCst);
         let nodes = nodes.load(Ordering::SeqCst);
 
-        println!("Nodes: {}", nodes);
+        debug!("Number of nodes in the trie: {}", nodes);
         let uniform = 1.0 / trie.root.children.len() as f64;
 
         if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {
@@ -79,8 +83,8 @@ impl ModifiedBackoffKneserNey {
         let d2 = 2.0 - 3.0 * y * (n3 as f64 / n2 as f64);
         let d3 = 3.0 - 4.0 * y * (n4 as f64 / n3 as f64);
         let elapsed = start.elapsed();
-        println!("Time taken: {:.2?}", elapsed);
-        println!("Smoothing calculated, d1: {}, d2: {}, d3: {}, uniform: {}", d1, d2, d3, uniform);
+        info!("Time taken: {:.2?}", elapsed);
+        info!("Smoothing calculated, d1: {:.4}, d2: {:.4}, d3: {:.4}, uniform: {:.4}", d1, d2, d3, uniform);
         (d1, d2, d3, uniform)
     }
 
@@ -113,18 +117,21 @@ impl ModifiedBackoffKneserNey {
 //From Chen & Goodman 1998
 impl Smoothing for ModifiedBackoffKneserNey {
     fn save(&self, filename: &str) {
+        info!("----- Saving smoothing to file -----");
         let _file = filename.to_owned() + ".smoothing";
         let serialized = bincode::serialize(self).unwrap();
         std::fs::write(_file, serialized).unwrap();
     }
 
     fn load(&mut self, filename: &str) {
+        info!("----- Loading smoothing from file -----");
         let _file = filename.to_owned() + ".smoothing";
         let serialized = std::fs::read(_file).unwrap();
         *self = bincode::deserialize(&serialized).unwrap();
     }
 
     fn reset_cache(&self) {
+        info!("----- Resetting smoothing cache -----");
         CACHE_S_C.clear();
         CACHE_S_N.clear();
         self.init_cache();

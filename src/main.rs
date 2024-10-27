@@ -20,6 +20,7 @@ use std::time::Instant;
 use std::fs::OpenOptions;
 use std::io::Write;
 use actix_web::{web, App, HttpServer, Responder};
+use log::{info, debug, error};
 
 fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize>, n_gram_lengths: Vec<u32>, output_file: &str) {
     let mut file = OpenOptions::new()
@@ -108,30 +109,38 @@ async fn start_http_server(smoothed_trie: Arc<SmoothedTrie>) -> std::io::Result<
 }
 
 fn main() {
+    env_logger::Builder::new()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} [{}] {}",
+                chrono::Local::now().format("%H:%M:%S"),
+                record.level(),
+                record.args()
+            )
+        })
+        .filter_level(log::LevelFilter::Info)
+        .init();
+
     //run_performance_tests("tokens.json");
     //NGramTrie::estimate_time_and_ram(475_000_000);
     
-    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), Box::new(ModifiedBackoffKneserNey::new(Arc::new(NGramTrie::new(7, Some(2_usize.pow(14)))))));
+    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), None);
 
     let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None);
-    smoothed_trie.fit_smoothing();
+    smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None, None);
 
     smoothed_trie.save("../170k_tokens");
 
     //smoothed_trie.load("../170k_tokens");
 
-    //smoothed_trie.set_rule_set(vec!["++++++".to_string(), "+++++".to_string(), "++++".to_string(), "+++".to_string(), "++".to_string(), "+".to_string()]);
-    let mut rule_set = NGramTrie::_calculate_ruleset(6);
-    smoothed_trie.set_rule_set(rule_set);
-    
-    println!("----- Getting rule count -----");
+    info!("----- Getting rule count -----");
     let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987], Some("**+***"));
     let start = Instant::now();
     let count = smoothed_trie.get_count(rule.clone());
     let elapsed = start.elapsed();
-    println!("Count: {}", count);
-    println!("Time taken: {:.2?}", elapsed);
+    info!("Count: {}", count);
+    info!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
     let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
@@ -139,26 +148,17 @@ fn main() {
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     test_seq_smoothing(&mut smoothed_trie, history);
-    println!("Rules: {:?}", smoothed_trie.rule_set);
-}
-
-fn print_cache_sizes() {
-    println!("CACHE_S_C size: {}", CACHE_S_C.len());
-    println!("CACHE_S_N size: {}", CACHE_S_N.len());
-    println!("CACHE_C size: {}", CACHE_C.len());
-    println!("CACHE_N size: {}", CACHE_N.len());
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
-    smoothed_trie.set_rule_set(NGramTrie::_calculate_ruleset(smoothed_trie.trie.n_gram_max_length - 1));
-    println!("----- Testing smoothing -----");
+    info!("----- Testing smoothing -----");
     let start = Instant::now();
     for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
         let rule = tokens[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
         let probabilities = smoothed_trie.get_prediction_probabilities(&rule);
-        print_cache_sizes();
+        smoothed_trie.debug_cache_sizes();
     }
     let elapsed = start.elapsed();
     let seq_words = tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1;
-    println!("Time taken for {:?} seq words predictions: {:.2?}", seq_words, elapsed);
+    info!("Time taken for {:?} sequential words predictions: {:.2?}", seq_words, elapsed);
 }
