@@ -283,7 +283,7 @@ impl NGramTrie {
     
     pub fn init_cache(&self) {
         CACHE_C.insert(vec![], self.root.get_count(&vec![]));
-        let nodes = self.root.find_all_nodes(&vec![]);
+        let nodes = vec![self.root.clone()];
         let nodes_arc = Arc::new(nodes);
         CACHE_N.insert(vec![], nodes_arc.clone());
     }

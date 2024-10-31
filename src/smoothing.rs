@@ -161,7 +161,11 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
         let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / c_i_minus_1 as f64;
 
-        let result = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64 + gamma * recursive;
+        let result = if c_i_minus_1 > 0 {
+            (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64 + gamma * recursive
+        } else {
+            recursive
+        };
         CACHE_S_C.insert(rule.to_vec(), result);
         result
     }

@@ -116,7 +116,7 @@ impl PySmoothedTrie {
     #[doc = "Get prediction probabilities for a given history.\n\n\
              Args:\n\
                  history (List[int]): List of token IDs (must be uint16)"]
-    fn get_prediction_probabilities(&self, history: Vec<u16>) -> Vec<(u16, Vec<(String, f64)>)> {
+    fn get_prediction_probabilities(&self, history: Vec<u16>) -> Vec<(String, Vec<(u16, f64)>)> {
         self.smoothed_trie.get_prediction_probabilities(&history)
     }
 

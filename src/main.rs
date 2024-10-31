@@ -81,13 +81,11 @@ struct PredictionRequest {
 
 #[derive(Serialize)]
 struct PredictionResponse {
-    probabilities: Vec<(u16, Vec<(String, f64)>)>,
+    probabilities: Vec<(String, Vec<(u16, f64)>)>,
 }
 
 async fn predict_probability(req: web::Json<PredictionRequest>, smoothed_trie: web::Data<SmoothedTrie>) -> impl Responder {
     let mut probabilities = smoothed_trie.get_prediction_probabilities(&req.history);
-
-    probabilities.sort_by_key(|k| k.0);
 
     let response = PredictionResponse {
         probabilities: probabilities,
@@ -119,7 +117,7 @@ fn main() {
                 record.args()
             )
         })
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .init();
 
     //run_performance_tests("tokens.json");
@@ -144,10 +142,27 @@ fn main() {
     
     // 170k_tokens
     let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    smoothed_trie.set_all_ruleset_by_length(3);
+    let history = vec![987, 4015, 935, 2940, 3947, 987];
+    let prob = smoothed_trie.get_prediction_probabilities(&history);
+    
+    let mut total_probabilities: Vec<(String, f64)> = Vec::new();
 
+    for (rule, probabilities) in &prob {
+        let total_prob: f64 = probabilities.iter().map(|(_, prob)| prob).sum();
+        total_probabilities.push((rule.clone(), total_prob));
+    }
+
+    for (rule, total_prob) in total_probabilities {
+        info!("Rule: {}, Total Probability: {:.6}", rule, total_prob);
+    }
+
+    info!("{:?}", prob);
+    
+    //info!("Probabilities: {:?}", prob);
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
-    test_seq_smoothing(&mut smoothed_trie, history);
+    //test_seq_smoothing(&mut smoothed_trie, history);
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

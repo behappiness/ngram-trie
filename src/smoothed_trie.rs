@@ -111,7 +111,7 @@ impl SmoothedTrie {
         debug!("CACHE_N size: {}", CACHE_N.len());
     }
 
-    pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(u16, Vec<(String, f64)>)> { 
+    pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<(u16, f64)>)> { 
         info!("----- Getting prediction probabilities -----");
         let start = Instant::now();
         if history.len() >= self.trie.n_gram_max_length as usize {
@@ -119,7 +119,7 @@ impl SmoothedTrie {
             panic!("History length must be less than the n-gram max length");
         }
         let _asd = self.probability_for_token(history, history[0]);
-        let prediction_probabilities = self.trie.root.children.par_iter() //.tqdm()
+        let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.par_iter() //.tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);
                 (*token, probabilities)
@@ -129,7 +129,32 @@ impl SmoothedTrie {
         let duration = start.elapsed();
         info!("Time taken to get prediction probabilities: {:.2?}", duration);
 
-        prediction_probabilities
+        let mut flipped_probabilities: Vec<(String, Vec<(u16, f64)>)> = Vec::new();
+        let mut rule_map: std::collections::HashMap<String, Vec<(u16, f64)>> = std::collections::HashMap::new();
+
+        for (token, probabilities) in &prediction_probabilities {
+            for (rule, prob) in probabilities {
+                rule_map.entry(rule.clone()).or_insert_with(Vec::new).push((*token, *prob));
+            }
+        }
+
+        for (rule, prob) in rule_map {
+            flipped_probabilities.push((rule, prob));
+        }
+
+        flipped_probabilities.sort_by(|a, b| b.0.cmp(&a.0));
+        flipped_probabilities.sort_by(|a, b| a.0.len().cmp(&b.0.len()));
+        flipped_probabilities.iter_mut().for_each(|(_, tokens)| tokens.sort_by(|a, b| a.0.cmp(&b.0)));
+
+        // Normalize the probabilities for every rule
+        for (_, tokens) in &mut flipped_probabilities {
+            let total_prob: f64 = tokens.iter().map(|(_, prob)| prob).sum();
+            for (_, prob) in tokens.iter_mut() {
+                *prob /= total_prob;
+            }
+        }
+
+        flipped_probabilities
     }
 
     pub fn set_all_ruleset_by_length(&mut self, rule_length: u32) {
