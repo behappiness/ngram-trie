@@ -128,14 +128,14 @@ impl NGramTrie {
         result
     }
 
-    pub fn _calculate_ruleset(n_gram_max_length: u32) -> Vec<String> {
+    pub fn _calculate_ruleset(n_gram_max_length: u32, characters: &[&str]) -> Vec<String> {
         if n_gram_max_length == 1 {
             return vec!["+".to_string(), "-".to_string()];
         }
         let mut ruleset = Vec::<String>::new();
-        ruleset.extend(NGramTrie::_calculate_ruleset(n_gram_max_length - 1));
+        ruleset.extend(NGramTrie::_calculate_ruleset(n_gram_max_length, characters));
     
-        let characters = vec!["+", "*", "-"];
+        //let characters = vec!["+", "*", "-"];
         
         let mut combinations : Vec<String> = (2..n_gram_max_length).fold(
             characters.iter().map(|c| characters.iter().map(move |&d| d.to_owned() + *c)).flatten().collect(),

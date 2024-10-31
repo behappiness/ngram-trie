@@ -9,6 +9,8 @@ use std::time::Instant;
 use rayon::prelude::*;
 use crate::smoothing::ModifiedBackoffKneserNey;
 use log::{info, debug, error};
+use serde_json;
+use std::fs;
 
 pub struct SmoothedTrie {
     pub trie: Arc<NGramTrie>,
@@ -18,7 +20,7 @@ pub struct SmoothedTrie {
 
 impl SmoothedTrie {
     pub fn new(trie: NGramTrie, smoothing_name: Option<String>) -> Self {
-        let rule_set = NGramTrie::_calculate_ruleset(trie.n_gram_max_length - 1);
+        let rule_set = NGramTrie::_calculate_ruleset(trie.n_gram_max_length - 1, &["+", "*", "-"]);
         info!("Ruleset size: {}", rule_set.len());
         debug!("Ruleset: {:?}", rule_set);
         let trie = Arc::new(trie);
@@ -35,12 +37,23 @@ impl SmoothedTrie {
     pub fn load(&mut self, filename: &str) {
         self.trie = Arc::new(NGramTrie::load(filename));
         self.smoothing.load(filename);
+
+        // Load the ruleset from a JSON file
+        let ruleset_file = format!("{}_ruleset.json", filename);
+        let contents = fs::read_to_string(&ruleset_file).expect("Unable to read ruleset file");
+        self.rule_set = serde_json::from_str(&contents).expect("Unable to parse ruleset");
+
         self.reset_cache();
     }
 
     pub fn save(&self, filename: &str) {
         self.trie.save(filename);
         self.smoothing.save(filename);
+
+        // Save the ruleset to a JSON file
+        let serialized_ruleset = serde_json::to_string(&self.rule_set).expect("Unable to serialize ruleset");
+        let ruleset_file = format!("{}_ruleset.json", filename);
+        fs::write(&ruleset_file, serialized_ruleset).expect("Unable to write ruleset file");
     }
 
     pub fn reset_cache(&self) {
@@ -50,7 +63,7 @@ impl SmoothedTrie {
 
     pub fn fit(&mut self, tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>, smoothing_name: Option<String>) {
         self.trie = Arc::new(NGramTrie::fit(tokens, n_gram_max_length, root_capacity, max_tokens));
-        self.set_rule_set(NGramTrie::_calculate_ruleset(n_gram_max_length - 1));
+        self.set_rule_set(NGramTrie::_calculate_ruleset(n_gram_max_length - 1, &["+", "*", "-"]));
         self.fit_smoothing(smoothing_name);
     }
 
@@ -119,4 +132,18 @@ impl SmoothedTrie {
         prediction_probabilities
     }
 
+    pub fn set_all_ruleset_by_length(&mut self, rule_length: u32) {
+        let rule_set = NGramTrie::_calculate_ruleset(rule_length, &["+", "*", "-"]);
+        self.set_rule_set(rule_set);
+    }
+
+    pub fn set_suffix_ruleset_by_length(&mut self, rule_length: u32) {
+        let rule_set = NGramTrie::_calculate_ruleset(rule_length, &["+"]);
+        self.set_rule_set(rule_set);
+    }
+
+    pub fn set_subgram_ruleset_by_length(&mut self, rule_length: u32) {
+        let rule_set = NGramTrie::_calculate_ruleset(rule_length, &["+", "-"]);
+        self.set_rule_set(rule_set);
+    }
 }

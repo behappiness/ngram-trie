@@ -118,16 +118,16 @@ impl ModifiedBackoffKneserNey {
 impl Smoothing for ModifiedBackoffKneserNey {
     fn save(&self, filename: &str) {
         info!("----- Saving smoothing to file -----");
-        let _file = filename.to_owned() + ".smoothing";
-        let serialized = bincode::serialize(self).unwrap();
+        let _file = filename.to_owned() + "_smoothing.json";
+        let serialized = serde_json::to_string(self).unwrap();
         std::fs::write(_file, serialized).unwrap();
     }
 
     fn load(&mut self, filename: &str) {
         info!("----- Loading smoothing from file -----");
-        let _file = filename.to_owned() + ".smoothing";
-        let serialized = std::fs::read(_file).unwrap();
-        *self = bincode::deserialize(&serialized).unwrap();
+        let _file = filename.to_owned() + "_smoothing.json";
+        let serialized = std::fs::read_to_string(_file).unwrap();
+        *self = serde_json::from_str(&serialized).unwrap();
     }
 
     fn reset_cache(&self) {

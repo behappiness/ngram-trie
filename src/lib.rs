@@ -71,6 +71,28 @@ impl PySmoothedTrie {
         self.smoothed_trie.set_rule_set(rule_set);
     }
 
+
+    #[doc = "Set all: +, *, - ruleset by n-gram length.\n\n\
+             Args:\n\
+                 rule_length (int): Length of ruleset to set"]
+    fn set_all_ruleset_by_length(&mut self, rule_length: u32) {
+        self.smoothed_trie.set_all_ruleset_by_length(rule_length);
+    }
+
+    #[doc = "Set suffix: + ruleset by n-gram length.\n\n\
+             Args:\n\
+                 rule_length (int): Length of ruleset to set"]
+    fn set_suffix_ruleset_by_length(&mut self, rule_length: u32) {
+        self.smoothed_trie.set_suffix_ruleset_by_length(rule_length);
+    }
+
+    #[doc = "Set subgram: +, - ruleset by n-gram length.\n\n\
+             Args:\n\
+                 rule_length (int): Length of ruleset to set"]
+    fn set_subgram_ruleset_by_length(&mut self, rule_length: u32) {
+        self.smoothed_trie.set_subgram_ruleset_by_length(rule_length);
+    }
+
     #[doc = "Get count for a specific n-gram pattern.\n\n\
              Args:\n\
                  rule (List[Optional[int]]): List of token IDs (must be uint16). Example: [None, 1, 2]"]
