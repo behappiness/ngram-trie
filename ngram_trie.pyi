@@ -7,16 +7,16 @@ class PySmoothedTrie:
     Supports various smoothing techniques and efficient storage/retrieval of n-grams.
     """
 
-    def __init__(self, n_gram_max_length: int, root_capacity: Optional[int] = None) -> None:
+    def __init__(self, n_gram_max_length: int, root_capacity: int) -> None:
         """
         Initialize a new n-gram trie model.
 
         Args:
             n_gram_max_length (int): Maximum length of n-grams to store
-            root_capacity (Optional[int]): Initial capacity for the root node (for optimization)
+            root_capacity (int): Initial capacity (tokenizer size) for the root node (for optimization)
 
         Example:
-            >>> trie = PySmoothedTrie(n_gram_max_length=3)
+            >>> trie = PySmoothedTrie(n_gram_max_length=3, root_capacity=2**14)
         """
         ...
 

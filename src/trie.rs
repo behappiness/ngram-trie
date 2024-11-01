@@ -35,14 +35,18 @@ pub struct NGramTrie {
 
 impl Default for NGramTrie {
     fn default() -> Self {
-        NGramTrie::new(7, None)
+        NGramTrie::new(7, 2_usize.pow(14))
     }
 }
 
 impl NGramTrie {
-    pub fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
+    pub fn new(n_gram_max_length: u32, root_capacity: usize) -> Self {
+        let mut node = TrieNode::new(Some(root_capacity));
+        for i in 0..root_capacity {
+            node.children.insert(i as u16, Arc::new(TrieNode::new(None)));
+        }
         NGramTrie {
-            root: Arc::new(TrieNode::new(root_capacity)),
+            root: Arc::new(node),
             n_gram_max_length
         }
     }
@@ -210,7 +214,7 @@ impl NGramTrie {
         (t, y)
     }
     
-    pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
+    pub fn fit(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: usize, max_tokens: Option<usize>) -> Self {
         info!("----- Trie fitting -----");
         let tokens_size = max_tokens.unwrap_or(tokens.len());
         NGramTrie::estimate_time_and_ram(tokens_size);
@@ -226,7 +230,7 @@ impl NGramTrie {
         trie
     }
 
-    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>) -> Self {
+    pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: usize, max_tokens: Option<usize>) -> Self {
         info!("----- Trie fitting multithreaded -----");
         let root_trie = Arc::new(Mutex::new(NGramTrie::new(n_gram_max_length, root_capacity)));
         let tokens_size = max_tokens.unwrap_or(tokens.len());
@@ -238,7 +242,7 @@ impl NGramTrie {
         for batch in 0..num_batches {
             let batch_start = batch * batch_size;
             let batch_end = (batch_start + batch_size).min(tokens_size) - n_gram_max_length as usize + 1;
-            let trie = NGramTrie::new(n_gram_max_length, Some(BATCH_ROOT_CAPACITY));
+            let trie = NGramTrie::new(n_gram_max_length, BATCH_ROOT_CAPACITY);
             tries.push((trie, batch_start..batch_end));
         }
 

@@ -42,7 +42,7 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
             let start = Instant::now();
             //let trie = NGramTrie::fit_multithreaded(tokens.clone(), ranges, *n_gram_length);
             //let trie = NGramTrie::fit_multithreaded_recursively(tokens.clone(), ranges, *n_gram_length);
-            let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, None,Some(data_size));
+            let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, 2_usize.pow(14), Some(data_size));
             let fit_time = start.elapsed().as_secs_f64(); 
             // Measure RAM usage
             let ram_usage = 0 as f64 / (1024.0 * 1024.0);
@@ -123,10 +123,10 @@ fn main() {
     //run_performance_tests("tokens.json");
     //NGramTrie::estimate_time_and_ram(475_000_000);
     
-    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, Some(2_usize.pow(14))), None);
+    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, 2_usize.pow(14)), None);
 
     let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    smoothed_trie.fit(tokens, 7, Some(2_usize.pow(14)), None, None);
+    smoothed_trie.fit(tokens, 7, 2_usize.pow(14), None, None);
 
     smoothed_trie.save("../170k_tokens");
 
@@ -142,10 +142,19 @@ fn main() {
     
     // 170k_tokens
     let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
-    
+    let history = vec![987, 4015, 935, 2940, 3947, 987];
+    smoothed_trie.set_all_ruleset_by_length(3);
+    let probabilities = smoothed_trie.get_prediction_probabilities(&history);
+
+    for (rule, token_probs) in &probabilities {
+        let total_prob: f64 = token_probs.iter().map(|(_, prob)| prob).sum();
+        println!("Rule: {}, Total Probability: {}", rule, total_prob);
+    }
+
+    //println!("{:?}", probabilities[0]);
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
-    test_seq_smoothing(&mut smoothed_trie, history);
+    //test_seq_smoothing(&mut smoothed_trie, history);
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

@@ -21,11 +21,11 @@ impl PySmoothedTrie {
     #[doc = "Initialize a new n-gram trie model.\n\n\
              Args:\n\
                  n_gram_max_length (int): Maximum length of n-grams to store\n\
-                 root_capacity (Optional[int]): Initial capacity for the root node (for optimization)\n\n\
+                 root_capacity (int): Initial capacity (tokenizer size) for the root node (for optimization)\n\n\
              Example:\n\
-                 >>> trie = PySmoothedTrie(n_gram_max_length=3)"]
-    #[pyo3(signature = (n_gram_max_length, root_capacity=None))]
-    fn new(n_gram_max_length: u32, root_capacity: Option<usize>) -> Self {
+                 >>> trie = PySmoothedTrie(n_gram_max_length=3, root_capacity=2**14)"]
+    #[pyo3(signature = (n_gram_max_length, root_capacity))]
+    fn new(n_gram_max_length: u32, root_capacity: usize) -> Self {
         PySmoothedTrie {
             smoothed_trie: SmoothedTrie::new(NGramTrie::new(n_gram_max_length, root_capacity), None),
         }
@@ -54,13 +54,13 @@ impl PySmoothedTrie {
              Args:\n\
                  tokens (List[int]): List of token IDs (must be uint16)\n\
                  n_gram_max_length (int): Maximum length of n-grams to store\n\
-                 root_capacity (Optional[int]): Initial capacity for optimization\n\
+                 root_capacity (int): Initial capacity (tokenizer size) for optimization\n\
                  max_tokens (Optional[int]): Maximum number of tokens to use\n\
                  smoothing_name (Optional[str]): Smoothing method name (default: 'modified_kneser_ney')\n\n\
              Example:\n\
-                 >>> trie.fit([1, 2, 3, 4, 5], n_gram_max_length=3)"]
-    #[pyo3(signature = (tokens, n_gram_max_length, root_capacity=None, max_tokens=None, smoothing_name=None))]
-    fn fit(&mut self, tokens: Vec<u16>, n_gram_max_length: u32, root_capacity: Option<usize>, max_tokens: Option<usize>, smoothing_name: Option<String>) {
+                 >>> trie.fit([1, 2, 3, 4, 5], n_gram_max_length=3, root_capacity=2**14)"]
+    #[pyo3(signature = (tokens, n_gram_max_length, root_capacity, max_tokens=None, smoothing_name=None))]
+    fn fit(&mut self, tokens: Vec<u16>, n_gram_max_length: u32, root_capacity: usize, max_tokens: Option<usize>, smoothing_name: Option<String>) {
         self.smoothed_trie.fit(Arc::new(tokens), n_gram_max_length, root_capacity, max_tokens, smoothing_name);
     }
 
