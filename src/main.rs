@@ -117,16 +117,16 @@ fn main() {
                 record.args()
             )
         })
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Debug)
         .init();
 
     //run_performance_tests("tokens.json");
     //NGramTrie::estimate_time_and_ram(475_000_000);
     
-    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(7, 2_usize.pow(14)), None);
+    let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(8, 2_usize.pow(14)), None);
 
     let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    smoothed_trie.fit(tokens, 7, 2_usize.pow(14), None, None);
+    smoothed_trie.fit(tokens, 8, 2_usize.pow(14), None, None);
 
     smoothed_trie.save("../170k_tokens");
 
@@ -142,19 +142,23 @@ fn main() {
     
     // 170k_tokens
     let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
-    let history = vec![987, 4015, 935, 2940, 3947, 987];
-    smoothed_trie.set_all_ruleset_by_length(3);
-    let probabilities = smoothed_trie.get_prediction_probabilities(&history);
+    // let history = vec![987, 4015, 935, 2940, 3947, 987];
+    // smoothed_trie.set_all_ruleset_by_length(3);
+    // let probabilities = smoothed_trie.get_prediction_probabilities(&history);
 
-    for (rule, token_probs) in &probabilities {
-        let total_prob: f64 = token_probs.iter().map(|(_, prob)| prob).sum();
-        println!("Rule: {}, Total Probability: {}", rule, total_prob);
-    }
-
+    // for (rule, token_probs) in &probabilities {
+    //     let total_prob: f64 = token_probs.iter().map(|(_, prob)| prob).sum();
+    //     println!("Rule: {}, Total Probability: {}", rule, total_prob);
+    // }
     //println!("{:?}", probabilities[0]);
+
+    let mut ruleset = smoothed_trie.rule_set.clone().iter().filter(|r| r.len() >= smoothed_trie.trie.n_gram_max_length as usize -1).cloned().collect::<Vec<_>>();
+    smoothed_trie.set_rule_set(ruleset);
+    smoothed_trie.set_all_ruleset_by_length(7);
+    println!("root children size: {}", smoothed_trie.trie.root.children.len());
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
-    //test_seq_smoothing(&mut smoothed_trie, history);
+    test_seq_smoothing(&mut smoothed_trie, history);
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

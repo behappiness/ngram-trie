@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use rclite::Arc;
 use std::ops::Range;
 use bincode::{serialize_into, deserialize_from};
-use sorted_vector_map::SortedVectorMap;
+use sorted_vector_map::{SortedVectorMap, SortedVectorSet};
 use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
@@ -25,12 +25,13 @@ const CACHE_SIZE_N: usize = 233*3*32; //(rules+25%) = RULES*1.25
 lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
     pub static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
+    pub static ref ZERO_COUNT_KEYS: Cache<u32, Arc<SortedVectorSet<u16>>> = Cache::new(3);
 } 
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NGramTrie {
     pub root: Arc<TrieNode>,
-    pub n_gram_max_length: u32
+    pub n_gram_max_length: u32,
 }
 
 impl Default for NGramTrie {
@@ -180,7 +181,7 @@ impl NGramTrie {
             _count = cache.par_iter().map(|node| node.count).sum();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
             _count = cache.par_iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
-        } else {
+        } else if !self.is_rule_in_zero_count_keys(rule) {
             _count = self.root.get_count(rule);
         }
 
@@ -189,19 +190,28 @@ impl NGramTrie {
     }
 
     pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
+        let mut nodes = Vec::new();
         if let Some(cache) = CACHE_N.get(&rule) {
             return cache.clone();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
-            let nodes: Vec<Arc<TrieNode>> = cache.par_iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
-            let nodes_arc = Arc::new(nodes);
-            CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
-            return nodes_arc;
-        } else {
-            let nodes = self.root.find_all_nodes(&rule);
-            let nodes_arc = Arc::new(nodes);
-            CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
-            nodes_arc
+            nodes = cache.par_iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
+        } else if !self.is_rule_in_zero_count_keys(&rule) {
+            nodes = self.root.find_all_nodes(&rule);
         }
+        let nodes_arc = Arc::new(nodes);
+        CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
+        nodes_arc
+    }
+
+    pub fn is_rule_in_zero_count_keys(&self, rule: &[Option<u16>]) -> bool {
+        let keys = ZERO_COUNT_KEYS.get(&0).unwrap();
+        rule.iter().any(|key| {
+            if let Some(key) = key {
+                keys.contains(&key)
+            } else {
+                false
+            }
+        })
     }
 
     pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
@@ -287,9 +297,19 @@ impl NGramTrie {
     
     pub fn init_cache(&self) {
         CACHE_C.insert(vec![], self.root.get_count(&vec![]));
+        let mut zero_count_keys = SortedVectorSet::new();
+        self.root.children.iter().for_each(|(key, child)| {
+            if child.count == 0 {
+                zero_count_keys.insert(*key);
+            }
+        });
+
+        ZERO_COUNT_KEYS.insert(0, Arc::new(zero_count_keys));
+
         let nodes = vec![self.root.clone()];
         let nodes_arc = Arc::new(nodes);
         CACHE_N.insert(vec![], nodes_arc.clone());
+
     }
 
     pub fn reset_cache(&self) {

@@ -4,7 +4,10 @@ use crate::smoothing::CACHE_S_C;
 use crate::smoothing::CACHE_S_N;
 use crate::trie::CACHE_C;
 use crate::trie::CACHE_N;
+use crate::trie::ZERO_COUNT_KEYS;
 use rclite::Arc;
+use simple_tqdm::ParTqdm;
+use simple_tqdm::Tqdm;
 use std::time::Instant;
 use rayon::prelude::*;
 use crate::smoothing::ModifiedBackoffKneserNey;
@@ -109,6 +112,7 @@ impl SmoothedTrie {
         debug!("CACHE_S_N size: {}", CACHE_S_N.len());
         debug!("CACHE_C size: {}", CACHE_C.len());
         debug!("CACHE_N size: {}", CACHE_N.len());
+        debug!("ZERO_COUNT_KEYS size: {}", ZERO_COUNT_KEYS.get(&0).unwrap().len());
     }
 
     pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<(u16, f64)>)> { 
@@ -119,7 +123,7 @@ impl SmoothedTrie {
             panic!("History length must be less than the n-gram max length");
         }
         let _asd = self.probability_for_token(history, history[0]);
-        let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.par_iter() //.tqdm()
+        let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.par_iter().tqdm()
             .map(|(token, _)| {
                 let probabilities = self.probability_for_token(history, *token);
                 (*token, probabilities)

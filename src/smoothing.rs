@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
-use sorted_vector_map::SortedVectorSet;
+use dashmap::DashSet;
 use log::{info, debug};
 
 // the dataset size matters as well
@@ -56,7 +56,7 @@ impl ModifiedBackoffKneserNey {
         let n4 = Arc::new(AtomicU32::new(0));
         let nodes = Arc::new(AtomicU32::new(0));
         trie.root.children.par_iter()//.tqdm()
-            .for_each(|(_, child)| {
+            .for_each(|(_, child)| { //maybe only have to do for the leaf nodes
                 let (c1, c2, c3, c4, _nodes, _rest) = child.count_ns();
                 n1.fetch_add(c1, Ordering::SeqCst);
                 n2.fetch_add(c2, Ordering::SeqCst);
@@ -92,18 +92,18 @@ impl ModifiedBackoffKneserNey {
         if let Some(cached_value) = CACHE_S_N.get(&rule) {
             return cached_value;
         }
-        let mut n1 = SortedVectorSet::<u16>::new();
-        let mut n2 = SortedVectorSet::<u16>::new();
-        let mut n3 = SortedVectorSet::<u16>::new();
-        for node in trie.find_all_nodes(rule.clone()).iter() {
-            for (key, child) in node.children.iter() {
-                match child.count {
+        let n1 = DashSet::<u16>::new();
+        let n2 = DashSet::<u16>::new();
+        let n3 = DashSet::<u16>::new();
+        trie.find_all_nodes(rule.clone()).par_iter().for_each(|node| {
+            node.children.par_iter().for_each(|(key, child)| {
+                match child.count { //maybe we have to sum over the keys and then do the match
                     1 => { n1.insert(*key); },
                     2 => { n2.insert(*key); },
                     _ => { n3.insert(*key); }
                 }
-            }
-        }
+            });
+        });
         let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
         CACHE_S_N.insert(rule, result);
         result
@@ -142,29 +142,33 @@ impl Smoothing for ModifiedBackoffKneserNey {
             return cached_value;
         }
 
-        let recursive = self.smoothing(trie.clone(), &rule[1..]);
-
         //let w_i = &rule[rule.len() - 1];
         let w_i_minus_1 = &rule[..rule.len() - 1];
 
-        let (n1, n2, n3) = Self::count_unique_ns(trie.clone(), w_i_minus_1.to_vec());
-
         let c_i_minus_1 = trie.get_count(&w_i_minus_1);
-        let c_i = trie.get_count(&rule);
-
-        let d = match c_i {
-            0 => 0.0,
-            1 => self.d1,
-            2 => self.d2,
-            _ => self.d3
-        };
-
-        let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / c_i_minus_1 as f64;
-
+        
         let result = if c_i_minus_1 > 0 {
-            (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64 + gamma * recursive
+            let (n1, n2, n3) = Self::count_unique_ns(trie.clone(), w_i_minus_1.to_vec());
+
+            let c_i = trie.get_count(&rule);
+
+            let d = match c_i {
+                0 => 0.0,
+                1 => self.d1,
+                2 => self.d2,
+                _ => self.d3
+            };
+
+            let alpha = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64;
+            if n1 == 0 && n2 == 0 && n3 == 0 {
+                alpha
+            } else {
+                let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / c_i_minus_1 as f64;
+
+                alpha + gamma * self.smoothing(trie.clone(), &rule[1..])
+            }
         } else {
-            recursive
+            self.smoothing(trie.clone(), &rule[1..])
         };
         CACHE_S_C.insert(rule.to_vec(), result);
         result
