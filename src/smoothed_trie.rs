@@ -10,7 +10,7 @@ use simple_tqdm::ParTqdm;
 use simple_tqdm::Tqdm;
 use std::time::Instant;
 use rayon::prelude::*;
-use crate::smoothing::ModifiedBackoffKneserNey;
+use crate::smoothing::*;
 use log::{info, debug, error};
 use serde_json;
 use std::fs;
@@ -27,13 +27,7 @@ impl SmoothedTrie {
         info!("Ruleset size: {}", rule_set.len());
         debug!("Ruleset: {:?}", rule_set);
         let trie = Arc::new(trie);
-        let smoothing = match smoothing_name {
-            Some(smoothing_name) => match smoothing_name.as_str() {
-                "modified_kneser_ney" => Box::new(ModifiedBackoffKneserNey::new(trie.clone())),
-                _ => Box::new(ModifiedBackoffKneserNey::new(trie.clone()))
-            },
-            None => Box::new(ModifiedBackoffKneserNey::new(trie.clone()))
-        };
+        let smoothing = Self::choose_smoothing(trie.clone(), smoothing_name);
         SmoothedTrie { trie: trie, smoothing: smoothing, rule_set: rule_set }
     }
 
@@ -81,19 +75,25 @@ impl SmoothedTrie {
 
     pub fn fit_smoothing(&mut self, smoothing_name: Option<String>) {
         self.reset_cache();
-        self.smoothing = match smoothing_name {
+        self.smoothing = Self::choose_smoothing(self.trie.clone(), smoothing_name);
+    }
+
+    pub fn choose_smoothing(trie: Arc<NGramTrie>, smoothing_name: Option<String>) -> Box<dyn Smoothing> {
+        match smoothing_name {
             Some(smoothing_name) => match smoothing_name.as_str() {
-                "modified_kneser_ney" => Box::new(ModifiedBackoffKneserNey::new(self.trie.clone())),
-                _ => Box::new(ModifiedBackoffKneserNey::new(self.trie.clone()))
+                "modified_kneser_ney" => Box::new(ModifiedBackoffKneserNey::new(trie.clone())),
+                "stupid_backoff" => Box::new(StupidBackoff::new(None)),
+                _ => Box::new(StupidBackoff::new(None))
             },
-            None => Box::new(ModifiedBackoffKneserNey::new(self.trie.clone()))
-        };
+            None => Box::new(StupidBackoff::new(None))
+        }
     }
 
     pub fn get_count(&self, rule: Vec<Option<u16>>) -> u32 {
         self.trie.get_count(&rule)
     }
 
+    #[inline]
     pub fn probability_for_token(&self, history: &[u16], predict: u16) -> Vec<(String, f64)> {
         let mut rules_smoothed = Vec::<(String, f64)>::new();
 
@@ -122,13 +122,15 @@ impl SmoothedTrie {
             error!("History length must be less than the n-gram max length");
             panic!("History length must be less than the n-gram max length");
         }
-        let _asd = self.probability_for_token(history, history[0]);
+        self.trie.cache_find_all_nodes(history, &self.rule_set);
+        debug!("Loaded cache");
+        self.debug_cache_sizes();
         let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.par_iter().tqdm()
-            .map(|(token, _)| {
-                let probabilities = self.probability_for_token(history, *token);
-                (*token, probabilities)
-            })
-            .collect();
+                .map(|(token, _)| {
+                    let probabilities = self.probability_for_token(history, *token);
+                    (*token, probabilities)
+                })
+                .collect();
 
         let duration = start.elapsed();
         info!("Time taken to get prediction probabilities: {:.2?}", duration);

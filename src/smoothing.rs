@@ -88,6 +88,7 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
+    #[inline]
     pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
         if let Some(cached_value) = CACHE_S_N.get(&rule) {
             return cached_value;
@@ -137,6 +138,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
         self.init_cache();
     }
 
+    #[inline]
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
         if let Some(cached_value) = CACHE_S_C.get(rule) {
             return cached_value;
@@ -174,3 +176,60 @@ impl Smoothing for ModifiedBackoffKneserNey {
         result
     }
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct StupidBackoff {
+    pub backoff_factor: f64,
+}
+
+impl StupidBackoff {
+    pub fn new(backoff_factor: Option<f64>) -> Self {
+        StupidBackoff { backoff_factor: backoff_factor.unwrap_or(0.4) }
+    }
+
+    pub fn init_cache(&self) {
+        CACHE_S_C.insert(vec![], 0.0);
+    }
+}
+
+impl Smoothing for StupidBackoff {
+    #[inline]
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
+        if let Some(cached_value) = CACHE_S_C.get(rule) {
+            return cached_value;
+        }
+        let c_i = trie.get_count(&rule);
+        let mut _result = 0.0;
+        if c_i > 0 {
+            let c_i_minus_1 = trie.get_count(&rule[..rule.len() - 1]); //cannot be 0 if higher order ngrams is non-zero
+            _result = c_i as f64 / c_i_minus_1 as f64;
+        } else {
+            _result = self.backoff_factor * self.smoothing(trie.clone(), &rule[1..]);
+        }
+        CACHE_S_C.insert(rule.to_vec(), _result);
+        _result
+    }
+
+    fn save(&self, filename: &str) {
+        info!("----- Saving stupid backoff to file -----");
+        let _file = filename.to_owned() + "_stupid_backoff.json";
+        let serialized = serde_json::to_string(self).unwrap();
+        std::fs::write(_file, serialized).unwrap();
+    }
+
+    fn load(&mut self, filename: &str) {
+        info!("----- Loading stupid backoff from file -----");
+        let _file = filename.to_owned() + "_stupid_backoff.json";
+        let serialized = std::fs::read_to_string(_file).unwrap();
+        *self = serde_json::from_str(&serialized).unwrap();
+    }
+
+    fn reset_cache(&self) {
+        info!("----- Resetting stupid backoff cache -----");
+        CACHE_S_C.clear();
+        CACHE_S_N.clear();
+        self.init_cache();
+    }
+}
+
+

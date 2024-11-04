@@ -52,11 +52,13 @@ impl NGramTrie {
         }
     }
 
+    #[inline]
     pub fn insert(&mut self, n_gram: &[u16]) {
         let root = Arc::get_mut(&mut self.root).unwrap();
         root.insert(n_gram);
     }
 
+    #[inline]
     pub fn merge(&mut self, other: &NGramTrie) {
         info!("----- Merging tries -----");
         let start = Instant::now();
@@ -171,6 +173,7 @@ impl NGramTrie {
         ruleset
     }
 
+    #[inline]
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
         if let Some(cache) = CACHE_C.get(rule) {
             return cache;
@@ -178,10 +181,10 @@ impl NGramTrie {
 
         let mut _count = 0;
         if let Some(cache) = CACHE_N.get(rule) {
-            _count = cache.par_iter().map(|node| node.count).sum();
+            _count = cache.iter().map(|node| node.count).sum();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
-            _count = cache.par_iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
-        } else if !self.is_rule_in_zero_count_keys(rule) {
+            _count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
+        } else /*if !self.is_rule_in_zero_count_keys(rule)*/ {
             _count = self.root.get_count(rule);
         }
 
@@ -189,18 +192,28 @@ impl NGramTrie {
         _count
     }
 
+    #[inline]
     pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
-        let mut nodes = Vec::new();
+        let mut _nodes = Vec::new();
         if let Some(cache) = CACHE_N.get(&rule) {
             return cache.clone();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
-            nodes = cache.par_iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
-        } else if !self.is_rule_in_zero_count_keys(&rule) {
-            nodes = self.root.find_all_nodes(&rule);
+            _nodes = cache.iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
+        } else /*if !self.is_rule_in_zero_count_keys(&rule)*/ {
+            _nodes = self.root.find_all_nodes(&rule);
         }
-        let nodes_arc = Arc::new(nodes);
+        let nodes_arc = Arc::new(_nodes);
         CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
         nodes_arc
+    }
+
+    pub fn cache_find_all_nodes(&self, history: &[u16], ruleset: &[String]) {
+        for rule in ruleset {
+            for i in 0..rule.len() {
+                let _rule = Self::_preprocess_rule_context(&history, Some(&rule[i..].to_string()));
+                self.find_all_nodes(_rule);
+            }
+        }
     }
 
     pub fn is_rule_in_zero_count_keys(&self, rule: &[Option<u16>]) -> bool {
