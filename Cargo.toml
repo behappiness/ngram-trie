@@ -13,7 +13,7 @@ license = "MIT"
 [lib]
 name = "ngram_trie"
 # "cdylib" is necessary to produce a shared library for Python to import from.
-#crate-type = ["cdylib"]
+crate-type = ["cdylib"]
 
 [[bin]]
 name = "ngram_trie_bin"
