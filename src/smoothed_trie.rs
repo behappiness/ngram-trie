@@ -1,10 +1,4 @@
-use crate::trie::NGramTrie;
-use crate::smoothing::Smoothing;
-use crate::smoothing::CACHE_S_C;
-use crate::smoothing::CACHE_S_N;
-use crate::trie::CACHE_C;
-use crate::trie::CACHE_N;
-use crate::trie::ZERO_COUNT_KEYS;
+use crate::trie::*;
 use rclite::Arc;
 use simple_tqdm::ParTqdm;
 use simple_tqdm::Tqdm;
@@ -93,7 +87,6 @@ impl SmoothedTrie {
         self.trie.get_count(&rule)
     }
 
-    #[inline]
     pub fn probability_for_token(&self, history: &[u16], predict: u16) -> Vec<(String, f64)> {
         let mut rules_smoothed = Vec::<(String, f64)>::new();
 
@@ -125,7 +118,7 @@ impl SmoothedTrie {
         self.trie.cache_find_all_nodes(history, &self.rule_set);
         debug!("Loaded cache");
         self.debug_cache_sizes();
-        let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.par_iter().tqdm()
+        let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.iter().tqdm()
                 .map(|(token, _)| {
                     let probabilities = self.probability_for_token(history, *token);
                     (*token, probabilities)
@@ -140,7 +133,7 @@ impl SmoothedTrie {
 
         for (token, probabilities) in &prediction_probabilities {
             for (rule, prob) in probabilities {
-                rule_map.entry(rule.clone()).or_insert_with(Vec::new).push((*token, *prob));
+                rule_map.entry(rule.to_string()).or_insert_with(Vec::new).push((*token, *prob));
             }
         }
 

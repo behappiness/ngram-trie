@@ -8,10 +8,10 @@ use trie::trienode::TrieNode;
 use smoothing::ModifiedBackoffKneserNey;
 use sorted_vector_map::SortedVectorMap;
 use smoothed_trie::SmoothedTrie;
-use crate::smoothing::CACHE_S_C;
-use crate::smoothing::CACHE_S_N;
-use crate::trie::CACHE_C;
-use crate::trie::CACHE_N;
+use smoothing::CACHE_S_C;
+use smoothing::CACHE_S_N;
+use trie::CACHE_C;
+use trie::CACHE_N;
 
 use rclite::Arc;
 use serde::Serialize;
@@ -125,7 +125,7 @@ fn main() {
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(8, 2_usize.pow(14)), None);
 
     let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    smoothed_trie.fit(tokens, 8, 0, None, Some("modified_kneser_ney".to_string()));
+    smoothed_trie.fit(tokens, 8, 0, None, Some("_modified_kneser_ney".to_string()));
 
     smoothed_trie.save("../170k_tokens");
 
@@ -151,10 +151,13 @@ fn main() {
     // }
     //println!("{:?}", probabilities[0]);
     
+    smoothed_trie.set_all_ruleset_by_length(7);
+
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     //test_seq_smoothing(&mut smoothed_trie, history);
     smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
+    smoothed_trie.debug_cache_sizes();
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

@@ -10,8 +10,8 @@ use dashmap::DashSet;
 use log::{info, debug};
 
 // the dataset size matters as well
-const CACHE_SIZE_S_C: usize = 233*16104*32; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_S_N: usize = 233*3*32; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_S_C: usize = 610*16384*32; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_S_N: usize = 610*3*32; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_S_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_S_C);
@@ -88,7 +88,6 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
-    #[inline]
     pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
         if let Some(cached_value) = CACHE_S_N.get(&rule) {
             return cached_value;
@@ -96,8 +95,8 @@ impl ModifiedBackoffKneserNey {
         let n1 = DashSet::<u16>::new();
         let n2 = DashSet::<u16>::new();
         let n3 = DashSet::<u16>::new();
-        trie.find_all_nodes(rule.clone()).par_iter().for_each(|node| {
-            node.children.par_iter().for_each(|(key, child)| {
+        trie.find_all_nodes(rule.clone()).iter().for_each(|node| {
+            node.children.iter().for_each(|(key, child)| {
                 match child.count { //maybe we have to sum over the keys and then do the match
                     1 => { n1.insert(*key); },
                     2 => { n2.insert(*key); },
@@ -138,7 +137,6 @@ impl Smoothing for ModifiedBackoffKneserNey {
         self.init_cache();
     }
 
-    #[inline]
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
         if let Some(cached_value) = CACHE_S_C.get(rule) {
             return cached_value;
@@ -193,21 +191,22 @@ impl StupidBackoff {
 }
 
 impl Smoothing for StupidBackoff {
-    #[inline]
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
-        if let Some(cached_value) = CACHE_S_C.get(rule) {
-            return cached_value;
-        }
+        // if let Some(cached_value) = CACHE_S_C.get(rule) {
+        //     return cached_value;
+        // }
         let c_i = trie.get_count(&rule);
-        let mut _result = 0.0;
+        //let mut _result = 0.0;
         if c_i > 0 {
             let c_i_minus_1 = trie.get_count(&rule[..rule.len() - 1]); //cannot be 0 if higher order ngrams is non-zero
-            _result = c_i as f64 / c_i_minus_1 as f64;
+            c_i as f64 / c_i_minus_1 as f64
+        } else if rule.len() > 1 {
+            self.backoff_factor * self.smoothing(trie, &rule[1..])
         } else {
-            _result = self.backoff_factor * self.smoothing(trie.clone(), &rule[1..]);
+            0.0
         }
-        CACHE_S_C.insert(rule.to_vec(), _result);
-        _result
+        // CACHE_S_C.insert(rule.to_vec(), _result);
+        
     }
 
     fn save(&self, filename: &str) {

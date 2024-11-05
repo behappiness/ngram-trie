@@ -15,12 +15,13 @@ use std::hash::{Hash, Hasher};
 use lazy_static::lazy_static;
 use quick_cache::sync::Cache;
 use log::{info, error, debug};
+use simple_tqdm::Tqdm;
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
 // the dataset size matters as well
-const CACHE_SIZE_C: usize = 233*16104*32; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_N: usize = 233*3*32; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_C: usize = 610*16384*32; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_N: usize = 610*3*32; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
@@ -173,7 +174,6 @@ impl NGramTrie {
         ruleset
     }
 
-    #[inline]
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
         if let Some(cache) = CACHE_C.get(rule) {
             return cache;
@@ -192,7 +192,6 @@ impl NGramTrie {
         _count
     }
 
-    #[inline]
     pub fn find_all_nodes(&self, rule: Vec<Option<u16>>) -> Arc<Vec<Arc<TrieNode>>> {
         let mut _nodes = Vec::new();
         if let Some(cache) = CACHE_N.get(&rule) {
@@ -203,15 +202,16 @@ impl NGramTrie {
             _nodes = self.root.find_all_nodes(&rule);
         }
         let nodes_arc = Arc::new(_nodes);
-        CACHE_N.insert(rule.to_vec(), nodes_arc.clone());
+        CACHE_N.insert(rule, nodes_arc.clone());
         nodes_arc
     }
 
     pub fn cache_find_all_nodes(&self, history: &[u16], ruleset: &[String]) {
         for rule in ruleset {
-            for i in 0..rule.len() {
+            for i in (0..rule.len()).rev() {
                 let _rule = Self::_preprocess_rule_context(&history, Some(&rule[i..].to_string()));
-                self.find_all_nodes(_rule);
+                self.find_all_nodes(_rule.clone());
+                self.get_count(&_rule);
             }
         }
     }
@@ -244,7 +244,7 @@ impl NGramTrie {
         let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
         let start = Instant::now();
-        for i in 0..max_tokens - n_gram_max_length as usize + 1 {
+        for i in (0..max_tokens - n_gram_max_length as usize + 1).tqdm() {
             trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
         let duration = start.elapsed();

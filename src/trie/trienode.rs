@@ -18,7 +18,6 @@ impl TrieNode {
         }
     }
 
-    #[inline]
     pub fn merge(&mut self, other: Arc<TrieNode>) {
         self.count += other.count;
         for (key, other_child) in other.children.iter() {
@@ -30,7 +29,6 @@ impl TrieNode {
         }
     }
 
-    #[inline]
     pub fn insert(&mut self, n_gram: &[u16]) {
         self.count += 1;
         if n_gram.is_empty() {
@@ -54,10 +52,9 @@ impl TrieNode {
         }
     }
 
-    #[inline]
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Vec<Arc<TrieNode>> {
-        let result = match rule.len() {
-            0 => return vec![],
+        match rule.len() {
+            0 => vec![],
             1 => {
                 match rule[0] {
                     None => {
@@ -75,8 +72,8 @@ impl TrieNode {
             _ => {
                 match rule[0] {
                     None => {
-                        self.children.iter()
-                            .flat_map(|(_, child)| child.find_all_nodes(&rule[1..]))
+                        self.children.values()
+                            .flat_map(|child| child.find_all_nodes(&rule[1..]))
                             .collect()
                     },
                     Some(token) => {
@@ -88,25 +85,32 @@ impl TrieNode {
                     }
                 }
             }
-        };
-        result
+        }
     }
     
     #[inline]
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
-        let count = if rule.len() == 0 { self.count } else {
-            match rule[0] {
-                None => self.children.iter()
-                    .map(|(_, child)| child.get_count(&rule[1..]))
-                    .sum(),
-                Some(token) => self.children.get(&token)
-                    .map_or(0, |child| child.get_count(&rule[1..]))
+        match rule.len() {
+            0 => self.count,
+            1 => {
+                match rule[0] {
+                    None => self.count,
+                    Some(token) => self.children.get(&token)
+                        .map_or(0, |child| child.count)
+                }
+            },
+            _ => {
+                match rule[0] {
+                    None => self.children.values()
+                        .map(|child| child.get_count(&rule[1..]))
+                        .sum(),
+                    Some(token) => self.children.get(&token)
+                        .map_or(0, |child| child.get_count(&rule[1..]))
+                }
             }
-        };
-        count
+        }
     }
 
-    #[inline]
     pub fn count_ns(&self) -> (u32, u32, u32, u32, u32, u32) {
         let mut n1 = 0;
         let mut n2 = 0;
