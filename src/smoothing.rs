@@ -1,13 +1,20 @@
-use crate::trie::NGramTrie;
-use std::time::Instant;
-use serde::{Serialize, Deserialize};
-use rclite::Arc;
-use rayon::prelude::*;
-use std::sync::atomic::{AtomicU32, Ordering};
-use quick_cache::sync::Cache;
-use lazy_static::lazy_static;
+// Standard library imports
+use std::{
+    sync::atomic::{AtomicU32, Ordering},
+    time::Instant,
+};
+
+// External crates
 use dashmap::DashSet;
-use log::{info, debug};
+use lazy_static::lazy_static;
+use log::{debug, info};
+use quick_cache::sync::Cache;
+use rayon::prelude::*;
+use rclite::Arc;
+use serde::{Deserialize, Serialize};
+
+// Internal imports
+use crate::trie::NGramTrie;
 
 // the dataset size matters as well
 const CACHE_SIZE_S_C: usize = 610*16384*32; //(rules+25%)*keys = RULES*KEYS

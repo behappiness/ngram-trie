@@ -1,17 +1,20 @@
-pub mod trienode;
+use std::{
+    fs::{File, metadata},
+    hash::{Hash, Hasher},
+    io::{BufReader, BufWriter},
+    ops::Range,
+    sync::Mutex,
+    time::Instant,
+};
 
+pub mod trienode;
 use trienode::TrieNode;
-use serde::{Serialize, Deserialize};
-use std::fs::{File, metadata};
-use std::io::{BufReader, BufWriter};
-use std::time::Instant;
-use std::sync::Mutex;
-use rclite::Arc;
-use std::ops::Range;
-use bincode::{serialize_into, deserialize_from};
-use sorted_vector_map::{SortedVectorMap, SortedVectorSet};
+
+use log::{info, error, debug};
 use rayon::prelude::*;
-use std::hash::{Hash, Hasher};
+use serde::{Serialize, Deserialize};
+use rclite::Arc;
+use bincode::{serialize_into, deserialize_from};
 use lazy_static::lazy_static;
 use quick_cache::sync::Cache;
 use log::{info, error, debug};

@@ -1,8 +1,8 @@
 use serde::{Serialize, Deserialize};
-use sorted_vector_map::SortedVectorMap;
-use std::collections::HashMap;
-use rclite::Arc;
 use rayon::prelude::*;
+use rclite::Arc;
+use sorted_vector_map::SortedVectorMap;
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TrieNode {

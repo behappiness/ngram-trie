@@ -1,8 +1,10 @@
-#![allow(warnings)]
+use std::{io::Write, fs::OpenOptions, time::Instant};
+
 pub mod trie;
 pub mod smoothing;
 pub mod smoothed_trie;
 
+<<<<<<< HEAD
 use trie::NGramTrie;
 use trie::trienode::TrieNode;
 use smoothing::ModifiedBackoffKneserNey;
@@ -12,15 +14,21 @@ use smoothing::CACHE_S_C;
 use smoothing::CACHE_S_N;
 use trie::CACHE_C;
 use trie::CACHE_N;
+=======
+use crate::{
+    trie::{NGramTrie, trienode::TrieNode, CACHE_C, CACHE_N},
+    smoothing::{ModifiedBackoffKneserNey, CACHE_S_C, CACHE_S_N},
+    smoothed_trie::SmoothedTrie,
+};
+>>>>>>> 7e8983a (add unsmoothed probs)
 
-use rclite::Arc;
+use log::{info, debug, error};
 use serde::Serialize;
 use serde::Deserialize;
-use std::time::Instant;
-use std::fs::OpenOptions;
-use std::io::Write;
+use rclite::Arc;
 use actix_web::{web, App, HttpServer, Responder};
-use log::{info, debug, error};
+use serde_json;
+use sorted_vector_map::SortedVectorMap;
 
 fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize>, n_gram_lengths: Vec<u32>, output_file: &str) {
     let mut file = OpenOptions::new()
@@ -78,6 +86,7 @@ struct PredictionRequest {
     history: Vec<u16>,
     predict: u16,
 }
+
 
 #[derive(Serialize)]
 struct PredictionResponse {
@@ -156,8 +165,14 @@ fn main() {
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     //test_seq_smoothing(&mut smoothed_trie, history);
+<<<<<<< HEAD
     smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
     smoothed_trie.debug_cache_sizes();
+=======
+    let probabilities = smoothed_trie.get_unsmoothed_probabilities(&vec![0,1,2,3,4,5,6]);
+    let output = serde_json::to_string_pretty(&probabilities).unwrap();
+    std::fs::write("probabilities.json", output).expect("Unable to write probabilities file");
+>>>>>>> 7e8983a (add unsmoothed probs)
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
