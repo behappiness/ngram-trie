@@ -1,0 +1,3 @@
+maturin
+pyo3
+pyo3-log
