@@ -156,6 +156,37 @@ impl SmoothedTrie {
         flipped_probabilities
     }
 
+    pub fn get_unsmoothed_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<(u16, f64)>)> {
+
+        let mut rules_unsmoothed = Vec::<(String, Vec<(u16, f64)>)>::new();
+
+        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
+            let rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
+            let matches = self.trie.find_all_nodes(rule);
+            
+            // Use a HashMap to aggregate counts for same tokens
+            let token_count_map = matches.iter()
+                .flat_map(|node| node.children.iter())
+                .fold(std::collections::HashMap::new(), |mut map, (&token, child)| {
+                    *map.entry(token).or_insert(0) += child.count;
+                    map
+                });
+
+            // Convert HashMap to Vec and sort by token
+            let mut token_counts: Vec<(u16, u32)> = token_count_map.into_iter().collect();
+            token_counts.sort_by_key(|&(token, _)| token);
+
+            let total_count: u32 = token_counts.iter().map(|(_, count)| count).sum();
+            let token_probs: Vec<(u16, f64)> = token_counts.into_iter()
+                .map(|(token, count)| (token, count as f64 / total_count as f64))
+                .collect();
+                
+            rules_unsmoothed.push((r_set.to_string(), token_probs));
+        }
+        
+        rules_unsmoothed
+    }
+
     pub fn set_all_ruleset_by_length(&mut self, rule_length: u32) {
         let rule_set = NGramTrie::_calculate_ruleset(rule_length, &["+", "*", "-"]);
         self.set_rule_set(rule_set);

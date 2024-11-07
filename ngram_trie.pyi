@@ -129,6 +129,15 @@ class PySmoothedTrie:
         """
         ...
 
+    def get_unsmoothed_probabilities(self, history: List[int]) -> List[Tuple[str, List[Tuple[int, float]]]]:
+        """
+        Get unsmoothed probabilities for a given history.
+
+        Args:
+            history (List[int]): List of token IDs (must be uint16)
+        """
+        ...
+
     def probability_for_token(self, history: List[int], predict: int) -> List[Tuple[str, float]]:
         """
         Get probability distribution for a specific token.
