@@ -124,12 +124,12 @@ fn main() {
     
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(8, 2_usize.pow(14)), None);
 
-    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    smoothed_trie.fit(tokens, 8, 0, None, Some("_modified_kneser_ney".to_string()));
+    // let tokens = NGramTrie::load_json("170k_tokens.json", None).unwrap();
+    // smoothed_trie.fit(tokens, 8, 0, None, Some("_modified_kneser_ney".to_string()));
 
-    smoothed_trie.save("../170k_tokens");
+    // smoothed_trie.save("trie");
 
-    //smoothed_trie.load("../170k_tokens");
+    smoothed_trie.load("trie");
 
     info!("----- Getting rule count -----");
     let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));
@@ -156,8 +156,13 @@ fn main() {
     // 475m_tokens
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     //test_seq_smoothing(&mut smoothed_trie, history);
-    smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
-    smoothed_trie.debug_cache_sizes();
+    // smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
+    info!("----- Testing with 1 thread -----");
+    // smoothed_trie.configure_threads(14);
+    let start = Instant::now();
+    smoothed_trie.get_unsmoothed_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
+    let elapsed = start.elapsed();
+    info!("Time taken with 1 thread: {:.2?}", elapsed);
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

@@ -1,13 +1,16 @@
+use std::{fs, time::Instant, thread::available_parallelism};
+
 use crate::trie::*;
 use rclite::Arc;
 use simple_tqdm::ParTqdm;
 use simple_tqdm::Tqdm;
-use std::time::Instant;
 use rayon::prelude::*;
 use crate::smoothing::*;
 use log::{info, debug, error};
 use serde_json;
-use std::fs;
+
+use rayon::ThreadPoolBuilder;
+
 
 pub struct SmoothedTrie {
     pub trie: Arc<NGramTrie>,
@@ -20,9 +23,19 @@ impl SmoothedTrie {
         let rule_set = NGramTrie::_calculate_ruleset(trie.n_gram_max_length - 1, &["+", "*", "-"]);
         info!("Ruleset size: {}", rule_set.len());
         debug!("Ruleset: {:?}", rule_set);
+        info!("----- Creating smoothed trie -----");
         let trie = Arc::new(trie);
         let smoothing = Self::choose_smoothing(trie.clone(), smoothing_name);
         SmoothedTrie { trie: trie, smoothing: smoothing, rule_set: rule_set }
+    }
+
+    pub fn configure_threads(&self, num_threads: usize) {
+        info!("----- Configuring number of threads to use for parallel operations -----");
+    
+        ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build_global()
+            .unwrap();
     }
 
     pub fn load(&mut self, filename: &str) {
