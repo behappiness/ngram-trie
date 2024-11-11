@@ -20,6 +20,17 @@ pub struct SmoothedTrie {
 
 impl SmoothedTrie {
     pub fn new(trie: NGramTrie, smoothing_name: Option<String>) -> Self {
+        info!("----- Configuring number of threads to use for parallel operations -----");
+
+        let num_threads = std::thread::available_parallelism()
+            .map(|p| p.get().saturating_sub(2))
+            .unwrap_or(1);
+        
+        ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build_global()
+            .unwrap();
+
         let rule_set = NGramTrie::_calculate_ruleset(trie.n_gram_max_length - 1, &["+", "*", "-"]);
         info!("Ruleset size: {}", rule_set.len());
         debug!("Ruleset: {:?}", rule_set);
@@ -27,15 +38,6 @@ impl SmoothedTrie {
         let trie = Arc::new(trie);
         let smoothing = Self::choose_smoothing(trie.clone(), smoothing_name);
         SmoothedTrie { trie: trie, smoothing: smoothing, rule_set: rule_set }
-    }
-
-    pub fn configure_threads(&self, num_threads: usize) {
-        info!("----- Configuring number of threads to use for parallel operations -----");
-    
-        ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .build_global()
-            .unwrap();
     }
 
     pub fn load(&mut self, filename: &str) {

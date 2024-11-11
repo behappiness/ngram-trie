@@ -3,15 +3,10 @@ pub mod trie;
 pub mod smoothing;
 pub mod smoothed_trie;
 
-use trie::NGramTrie;
-use trie::trienode::TrieNode;
-use smoothing::ModifiedBackoffKneserNey;
+use trie::{NGramTrie, trienode::TrieNode, CACHE_C, CACHE_N};
+use smoothing::{ModifiedBackoffKneserNey, CACHE_S_C, CACHE_S_N};
 use sorted_vector_map::SortedVectorMap;
 use smoothed_trie::SmoothedTrie;
-use smoothing::CACHE_S_C;
-use smoothing::CACHE_S_N;
-use trie::CACHE_C;
-use trie::CACHE_N;
 
 use rclite::Arc;
 use serde::Serialize;
@@ -157,12 +152,15 @@ fn main() {
     //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
     //test_seq_smoothing(&mut smoothed_trie, history);
     // smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
-    info!("----- Testing with 1 thread -----");
-    // smoothed_trie.configure_threads(14);
     let start = Instant::now();
-    smoothed_trie.get_unsmoothed_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
+    for _ in 0..32 {
+        let context: Vec<u16> = (0..7)
+            .map(|_| (rand::random::<u16>() % (2_u16.pow(14))))
+            .collect();
+        smoothed_trie.get_unsmoothed_probabilities(&context);
+    }
     let elapsed = start.elapsed();
-    info!("Time taken with 1 thread: {:.2?}", elapsed);
+    info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

@@ -58,7 +58,7 @@ impl TrieNode {
             1 => {
                 match rule[0] {
                     None => {
-                        self.children.values().cloned().collect()
+                        self.children.par_iter().map(|(_, v)| v.clone()).collect()
                     },
                     Some(token) => {
                         if let Some(child) = self.children.get(&token).cloned() {
@@ -72,8 +72,8 @@ impl TrieNode {
             _ => {
                 match rule[0] {
                     None => {
-                        self.children.values()
-                            .flat_map(|child| child.find_all_nodes(&rule[1..]))
+                        self.children.par_iter()
+                            .flat_map(|(_, child)| child.find_all_nodes(&rule[1..]))
                             .collect()
                     },
                     Some(token) => {
@@ -101,8 +101,8 @@ impl TrieNode {
             },
             _ => {
                 match rule[0] {
-                    None => self.children.values()
-                        .map(|child| child.get_count(&rule[1..]))
+                    None => self.children.par_iter()
+                        .map(|(_, child)| child.get_count(&rule[1..]))
                         .sum(),
                     Some(token) => self.children.get(&token)
                         .map_or(0, |child| child.get_count(&rule[1..]))
