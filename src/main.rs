@@ -71,7 +71,6 @@ fn run_performance_tests(filename: &str) {
 #[derive(Serialize, Deserialize)]
 struct PredictionRequest {
     history: Vec<u16>,
-    predict: u16,
 }
 
 #[derive(Serialize)]
@@ -79,23 +78,28 @@ struct PredictionResponse {
     probabilities: Vec<(String, Vec<(u16, f64)>)>,
 }
 
-async fn predict_probability(req: web::Json<PredictionRequest>, smoothed_trie: web::Data<SmoothedTrie>) -> impl Responder {
-    let mut probabilities = smoothed_trie.get_unsmoothed_probabilities(&req.history);
-
-    let response = PredictionResponse {
-        probabilities: probabilities,
-    };
-    web::Json(response)
+async fn predict_probability(
+    req: web::Json<PredictionRequest>, 
+    smoothed_trie: web::Data<Arc<SmoothedTrie>>
+) -> impl Responder {
+    let probabilities = smoothed_trie.get_unsmoothed_probabilities(&req.history);
+    web::Json(PredictionResponse { probabilities })
 }
 
 #[tokio::main]
-async fn start_http_server(smoothed_trie: Arc<SmoothedTrie>) -> std::io::Result<()> {
-    println!("----- Starting HTTP server -----");
+async fn start_http_server(smoothed_trie: SmoothedTrie) -> std::io::Result<()> {
+    let server_workers = 2;
+    println!("----- Starting HTTP server with {} workers -----", server_workers);
+    
+    // Create the Data wrapper once, outside the HttpServer::new closure
+    let shared_trie = web::Data::new(Arc::new(smoothed_trie));
+    
     HttpServer::new(move || {
         App::new()
-            .app_data(smoothed_trie.clone())
+            .app_data(shared_trie.clone()) // Clone the Data wrapper, not the trie itself
             .service(web::resource("/predict").route(web::post().to(predict_probability)))
     })
+    .workers(server_workers)
     .bind("127.0.0.1:8080")?
     .run()
     .await
@@ -124,7 +128,7 @@ fn main() {
 
     // smoothed_trie.save("trie");
 
-    smoothed_trie.load("trie");
+    smoothed_trie.load("ngram");
 
     // info!("----- Getting rule count -----");
     // let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));
@@ -164,7 +168,7 @@ fn main() {
     // let elapsed = start.elapsed();
     // info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
 
-    start_http_server(smoothed_trie.into()).unwrap();
+    start_http_server(smoothed_trie).unwrap();
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {

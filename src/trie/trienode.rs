@@ -1,6 +1,5 @@
 use serde::{Serialize, Deserialize};
 use sorted_vector_map::SortedVectorMap;
-use std::collections::HashMap;
 use rclite::Arc;
 use rayon::prelude::*;
 
@@ -58,7 +57,7 @@ impl TrieNode {
             1 => {
                 match rule[0] {
                     None => {
-                        self.children.par_iter().map(|(_, v)| v.clone()).collect()
+                        self.children.values().cloned().collect()
                     },
                     Some(token) => {
                         if let Some(child) = self.children.get(&token).cloned() {

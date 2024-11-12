@@ -1,10 +1,8 @@
-use std::{fs, time::Instant, thread::available_parallelism};
+use std::{fs, time::Instant};
 
 use crate::trie::*;
 use rclite::Arc;
-use simple_tqdm::ParTqdm;
 use simple_tqdm::Tqdm;
-use rayon::prelude::*;
 use crate::smoothing::*;
 use log::{info, debug, error};
 use serde_json;
