@@ -80,7 +80,7 @@ struct PredictionResponse {
 }
 
 async fn predict_probability(req: web::Json<PredictionRequest>, smoothed_trie: web::Data<SmoothedTrie>) -> impl Responder {
-    let mut probabilities = smoothed_trie.get_prediction_probabilities(&req.history);
+    let mut probabilities = smoothed_trie.get_unsmoothed_probabilities(&req.history);
 
     let response = PredictionResponse {
         probabilities: probabilities,
@@ -126,16 +126,16 @@ fn main() {
 
     smoothed_trie.load("trie");
 
-    info!("----- Getting rule count -----");
-    let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));
-    let start = Instant::now();
-    let count = smoothed_trie.get_count(rule.clone());
-    let elapsed = start.elapsed();
-    info!("Count: {}", count);
-    info!("Time taken: {:.2?}", elapsed);
+    // info!("----- Getting rule count -----");
+    // let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));
+    // let start = Instant::now();
+    // let count = smoothed_trie.get_count(rule.clone());
+    // let elapsed = start.elapsed();
+    // info!("Count: {}", count);
+    // info!("Time taken: {:.2?}", elapsed);
     
-    // 170k_tokens
-    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    // // 170k_tokens
+    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
     // let history = vec![987, 4015, 935, 2940, 3947, 987];
     // smoothed_trie.set_all_ruleset_by_length(3);
     // let probabilities = smoothed_trie.get_prediction_probabilities(&history);
@@ -148,19 +148,23 @@ fn main() {
     
     smoothed_trie.set_all_ruleset_by_length(7);
 
-    // 475m_tokens
-    //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
-    //test_seq_smoothing(&mut smoothed_trie, history);
-    // smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
-    let start = Instant::now();
-    for _ in 0..32 {
-        let context: Vec<u16> = (0..7)
-            .map(|_| (rand::random::<u16>() % (2_u16.pow(14))))
-            .collect();
-        smoothed_trie.get_unsmoothed_probabilities(&context);
-    }
-    let elapsed = start.elapsed();
-    info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
+    // // 475m_tokens
+    // //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
+    // //test_seq_smoothing(&mut smoothed_trie, history);
+    // // smoothed_trie.get_prediction_probabilities(&vec![987, 4015, 935, 2940, 3947, 987, 4015]);
+    // let data = vec![
+    //     173, 0, 2, 8661, 3609, 15, 2270, 1432, 705, 349, 277, 213, 17, 814, 4347, 8661, 3609, 237, 10228, 2266, 238, 215, 719, 1432, 1096, 1284, 286, 444, 2625, 238, 719, 1432, 13002, 377, 11064, 2075, 720, 240, 5093, 17, 264, 1873, 1427, 413, 287, 215, 1263, 15, 4547, 237, 3685, 238, 215, 4164, 950, 1133, 270, 215, 2680, 1073, 1789, 238, 3594, 3544, 2401, 1000, 1139, 237, 1934, 17, 5518, 229, 240, 215, 5755, 226, 839, 3609, 238, 215, 4164, 15, 215, 1991, 9570, 413, 287, 4531, 270, 1284, 270, 397, 1270, 238, 215, 950, 312, 769, 312, 1652, 229, 2183, 294, 209, 2509, 866, 225, 17, 1224, 2183, 312, 2106, 279, 411, 4104, 89, 755, 279, 411, 1589, 350, 235, 5898, 15, 3279, 237, 9644, 229, 3643, 4144, 238, 1096, 1690, 279, 3, 173, 0, 173, 0, 2, 4108, 2098, 43, 15, 15064, 15, 2714, 370, 1247, 15, 3349, 229, 10055, 415, 279, 1030, 240, 8398, 2095, 328, 3689, 17, 14001, 7218, 572, 7843, 12756, 4745, 17, 13291, 306, 1671, 620, 3546, 1077, 4831, 240, 1884, 12756, 4745, 863, 515, 17, 561, 5645, 238, 209, 12741, 452, 8295, 1685, 16052, 12756, 4745, 294, 382, 5022, 15, 10407, 374, 209, 2434, 2119, 2544, 209, 9208, 4297, 17, 825, 670, 7187, 515, 209, 1298, 15551, 2119, 237, 1242, 328, 286,
+    // ];
+
+    // let start = Instant::now();
+    // for i in 0..(data.len() - 7) {
+    //     let context = &data[i..i + 7];
+    //     smoothed_trie.get_unsmoothed_probabilities(context);
+    // }
+    // let elapsed = start.elapsed();
+    // info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
+
+    start_http_server(smoothed_trie.into()).unwrap();
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
