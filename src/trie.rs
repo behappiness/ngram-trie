@@ -253,6 +253,7 @@ impl NGramTrie {
         trie
     }
 
+    #[deprecated]
     pub fn fit_multithreaded(tokens: Arc<Vec<u16>>, n_gram_max_length: u32, root_capacity: usize, max_tokens: Option<usize>) -> Self {
         info!("----- Trie fitting multithreaded -----");
         let root_trie = Arc::new(Mutex::new(NGramTrie::new(n_gram_max_length, root_capacity)));

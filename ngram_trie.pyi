@@ -120,12 +120,13 @@ class PySmoothedTrie:
         """
         ...
 
-    def get_prediction_probabilities(self, history: List[int]) -> List[Tuple[str, List[Tuple[int, float]]]]:
+    def get_smoothed_probabilities(self, history: List[int], rule_set: Optional[List[str]] = None) -> List[Tuple[str, List[Tuple[int, float]]]]:
         """
-        Get prediction probabilities for a given history.
+        Get smoothed probabilities for a given history.
 
         Args:
             history (List[int]): List of token IDs (must be uint16)
+            rule_set (Optional[List[str]]): List of smoothing rules. Example: ['+', '++', '+*-']
         """
         ...
 
