@@ -181,9 +181,9 @@ impl NGramTrie {
 
         let mut _count = 0;
         if let Some(cache) = CACHE_N.get(rule) {
-            _count = cache.iter().map(|node| node.count).sum();
+            _count = cache.par_iter().map(|node| node.count).sum();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
-            _count = cache.iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
+            _count = cache.par_iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
         } else /*if !self.is_rule_in_zero_count_keys(rule)*/ {
             _count = self.root.get_count(rule);
         }
@@ -197,7 +197,7 @@ impl NGramTrie {
         if let Some(cache) = CACHE_N.get(&rule) {
             return cache.clone();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
-            _nodes = cache.iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
+            _nodes = cache.par_iter().flat_map(|node| node.find_all_nodes(&[rule[rule.len() - 1]])).collect();
         } else /*if !self.is_rule_in_zero_count_keys(&rule)*/ {
             _nodes = self.root.find_all_nodes(&rule);
         }
