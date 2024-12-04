@@ -49,7 +49,6 @@ impl ModifiedBackoffKneserNey {
         let mut d2 = vec![0.0; trie.n_gram_max_length as usize];
         let mut d3 = vec![0.0; trie.n_gram_max_length as usize];
         if trie.root.children.len() == 0 {
-            let ngram_length = trie.n_gram_max_length as usize;
             return (d1, d2, d3, 0.0);
         }
         info!("----- Calculating d values for smoothing -----");

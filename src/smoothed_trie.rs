@@ -122,18 +122,18 @@ impl SmoothedTrie {
     }
 
     pub fn get_smoothed_probabilities(&self, history: &[u16], rule_set: Option<Vec<String>>) -> Vec<(String, Vec<(u16, f64)>)> { 
-        info!("----- Getting smoothed probabilities -----");
-        let start = Instant::now();
-        if history.len() >= self.trie.n_gram_max_length as usize {
-            error!("History length must be less than the n-gram max length");
-            panic!("History length must be less than the n-gram max length");
-        }
+        //info!("----- Getting smoothed probabilities -----");
+        //let start = Instant::now();
+        // if history.len() >= self.trie.n_gram_max_length as usize {
+        //     error!("History length must be less than the n-gram max length");
+        //     panic!("History length must be less than the n-gram max length");
+        // }
         let mut rule_set = rule_set.unwrap_or_else(|| self.rule_set.clone());
         rule_set.sort_by(|a, b| b.cmp(a));
         rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
         //self.trie.cache_find_all_nodes(history, &rule_set); //probably it doesn't help
         //debug!("Loaded cache");
-        self.debug_cache_sizes();
+        //self.debug_cache_sizes();
         let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.iter().tqdm()
                 .map(|(token, _)| {
                     let probabilities = self.probability_for_token(history, *token, &rule_set);
@@ -141,8 +141,8 @@ impl SmoothedTrie {
                 })
                 .collect();
 
-        let duration = start.elapsed();
-        info!("Time taken to get prediction probabilities: {:.2?}", duration);
+        //let duration = start.elapsed();
+        //info!("Time taken to get prediction probabilities: {:.2?}", duration);
 
         let mut flipped_probabilities: Vec<(String, Vec<(u16, f64)>)> = Vec::with_capacity(rule_set.len());
         let mut rule_map: std::collections::HashMap<String, Vec<(u16, f64)>> = std::collections::HashMap::with_capacity(rule_set.len());
