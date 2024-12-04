@@ -18,7 +18,7 @@ fn bench_modified_kneser_ney_smoothing(c: &mut Criterion) {
                 history.clone()
             },
             |history| {
-                smoothed_trie.get_prediction_probabilities(&history);
+                smoothed_trie.get_smoothed_probabilities(&history);
             },
             criterion::BatchSize::NumIterations(1), // Set sample size to 3
         );
@@ -41,7 +41,7 @@ fn bench_stupid_backoff_smoothing(c: &mut Criterion) {
                 history.clone()
             },
             |history| {
-                smoothed_trie.get_prediction_probabilities(&history);
+                smoothed_trie.get_smoothed_probabilities(&history);
             },
             criterion::BatchSize::NumIterations(1), // Set sample size to 3
         );

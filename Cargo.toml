@@ -1,7 +1,7 @@
 [package]
 name = "ngram_trie"
 description = "A Rust-based n-gram trie library"
-version = "1.1.6"
+version = "1.1.8"
 authors = ["Botond Lovász <botilovasz@gmail.com>"]
 edition = "2021"
 readme = "README.md"
@@ -39,6 +39,7 @@ env_logger = "0.11.5"
 pyo3-log = "0.11.0"
 chrono = "0.4.38"
 dashmap = "6.1.0"
+rand = "0.8.5"
 
 [profile.dev]
 opt-level = 3

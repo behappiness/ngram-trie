@@ -2,7 +2,7 @@ use crate::trie::NGramTrie;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
 use rclite::Arc;
-use rayon::prelude::*;
+use rayon::{prelude::*, vec};
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
@@ -27,9 +27,9 @@ pub trait Smoothing: Sync + Send {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiedBackoffKneserNey {
-    pub d1: f64,
-    pub d2: f64,
-    pub d3: f64,
+    pub d1: Vec<f64>,
+    pub d2: Vec<f64>,
+    pub d3: Vec<f64>,
     pub uniform: f64
 }
 
@@ -44,47 +44,54 @@ impl ModifiedBackoffKneserNey {
         }
     }
 
-    pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (f64, f64, f64, f64) {
+    pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (Vec<f64>, Vec<f64>, Vec<f64>, f64) {
+        let mut d1 = vec![0.0; trie.n_gram_max_length as usize];
+        let mut d2 = vec![0.0; trie.n_gram_max_length as usize];
+        let mut d3 = vec![0.0; trie.n_gram_max_length as usize];
         if trie.root.children.len() == 0 {
-            return (0.0, 0.0, 0.0, 0.0);
+            return (d1, d2, d3, 0.0);
         }
         info!("----- Calculating d values for smoothing -----");
         let start = Instant::now();
-        let n1 = Arc::new(AtomicU32::new(0));
-        let n2 = Arc::new(AtomicU32::new(0));
-        let n3 = Arc::new(AtomicU32::new(0));
-        let n4 = Arc::new(AtomicU32::new(0));
-        let nodes = Arc::new(AtomicU32::new(0));
-        trie.root.children.par_iter()//.tqdm()
-            .for_each(|(_, child)| { //maybe only have to do for the leaf nodes
-                let (c1, c2, c3, c4, _nodes, _rest) = child.count_ns();
-                n1.fetch_add(c1, Ordering::SeqCst);
-                n2.fetch_add(c2, Ordering::SeqCst);
-                n3.fetch_add(c3, Ordering::SeqCst);
-                n4.fetch_add(c4, Ordering::SeqCst);
-                nodes.fetch_add(_nodes, Ordering::SeqCst);
-        });
-
-        let n1 = n1.load(Ordering::SeqCst);
-        let n2 = n2.load(Ordering::SeqCst);
-        let n3 = n3.load(Ordering::SeqCst);
-        let n4 = n4.load(Ordering::SeqCst);
-        let nodes = nodes.load(Ordering::SeqCst);
-
-        debug!("Number of nodes in the trie: {}", nodes);
-        let uniform = 1.0 / trie.root.children.len() as f64;
-
-        if n1 == 0 || n2 == 0 || n3 == 0 || n4 == 0 {
-            return (0.1, 0.2, 0.3, uniform);
+        let mut ns = vec![vec![0 as u32; 4]; trie.n_gram_max_length as usize];
+        for level in 1..=trie.n_gram_max_length {
+            let n1 = Arc::new(AtomicU32::new(0));
+            let n2 = Arc::new(AtomicU32::new(0));
+            let n3 = Arc::new(AtomicU32::new(0));
+            let n4 = Arc::new(AtomicU32::new(0));
+            trie.find_all_nodes(vec![None; level as usize]).par_iter().for_each(|node| {
+                match node.count {
+                    1 => { n1.fetch_add(1, Ordering::SeqCst); },
+                    2 => { n2.fetch_add(1, Ordering::SeqCst); },
+                    3 => { n3.fetch_add(1, Ordering::SeqCst); },
+                    4 => { n4.fetch_add(1, Ordering::SeqCst); },
+                    _ => {}
+                }
+            });
+            ns[level as usize - 1][0] = n1.load(Ordering::SeqCst);
+            ns[level as usize - 1][1] = n2.load(Ordering::SeqCst);
+            ns[level as usize - 1][2] = n3.load(Ordering::SeqCst);
+            ns[level as usize - 1][3] = n4.load(Ordering::SeqCst);
         }
 
-        let y = n1 as f64 / (n1 + 2 * n2) as f64;
-        let d1 = 1.0 - 2.0 * y * (n2 as f64 / n1 as f64);
-        let d2 = 2.0 - 3.0 * y * (n3 as f64 / n2 as f64);
-        let d3 = 3.0 - 4.0 * y * (n4 as f64 / n3 as f64);
+        let uniform = 1.0 / trie.root.children.len() as f64;
+
+        for i in 0..trie.n_gram_max_length as usize {
+            if ns[i][0] == 0 || ns[i][1] == 0 || ns[i][2] == 0 || ns[i][3] == 0 {
+                d1[i] = 0.1;
+                d2[i] = 0.2;
+                d3[i] = 0.3;
+            } else {
+                let y = ns[i][0] as f64 / (ns[i][0] as f64 + 2.0 * ns[i][1] as f64);
+                d1[i] = 1.0 - 2.0 * y * (ns[i][1] as f64 / ns[i][0] as f64);
+                d2[i] = 2.0 - 3.0 * y * (ns[i][2] as f64 / ns[i][1] as f64);
+                d3[i] = 3.0 - 4.0 * y * (ns[i][3] as f64 / ns[i][2] as f64);
+            }
+        }
+
         let elapsed = start.elapsed();
         info!("Time taken: {:.2?}", elapsed);
-        info!("Smoothing calculated, d1: {:.4}, d2: {:.4}, d3: {:.4}, uniform: {:.4}", d1, d2, d3, uniform);
+        info!("Smoothing calculated, d1: {:?}, d2: {:?}, d3: {:?}, uniform: {:.4}", d1, d2, d3, uniform);
         (d1, d2, d3, uniform)
     }
 
@@ -152,18 +159,20 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
             let c_i = trie.get_count(&rule);
 
+            let level = trie.n_gram_max_length as usize - rule.len();
+
             let d = match c_i {
                 0 => 0.0,
-                1 => self.d1,
-                2 => self.d2,
-                _ => self.d3
+                1 => self.d1[level],
+                2 => self.d2[level],
+                _ => self.d3[level]
             };
 
             let alpha = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64;
             if n1 == 0 && n2 == 0 && n3 == 0 {
                 alpha
             } else {
-                let gamma = (self.d1 * n1 as f64 + self.d2 * n2 as f64 + self.d3 * n3 as f64) / c_i_minus_1 as f64;
+                let gamma = (self.d1[level] * n1 as f64 + self.d2[level] * n2 as f64 + self.d3[level] * n3 as f64) / c_i_minus_1 as f64;
 
                 alpha + gamma * self.smoothing(trie.clone(), &rule[1..])
             }
@@ -192,21 +201,21 @@ impl StupidBackoff {
 
 impl Smoothing for StupidBackoff {
     fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
-        // if let Some(cached_value) = CACHE_S_C.get(rule) {
-        //     return cached_value;
-        // }
+        if let Some(cached_value) = CACHE_S_C.get(rule) {
+            return cached_value;
+        }
         let c_i = trie.get_count(&rule);
-        //let mut _result = 0.0;
+        let mut _result = 0.0;
         if c_i > 0 {
             let c_i_minus_1 = trie.get_count(&rule[..rule.len() - 1]); //cannot be 0 if higher order ngrams is non-zero
-            c_i as f64 / c_i_minus_1 as f64
+            _result = c_i as f64 / c_i_minus_1 as f64;
         } else if rule.len() > 1 {
-            self.backoff_factor * self.smoothing(trie, &rule[1..])
+            _result = self.backoff_factor * self.smoothing(trie, &rule[1..]);
         } else {
-            0.0
+            _result = 0.0;
         }
-        // CACHE_S_C.insert(rule.to_vec(), _result);
-        
+        CACHE_S_C.insert(rule.to_vec(), _result);
+        _result
     }
 
     fn save(&self, filename: &str) {
