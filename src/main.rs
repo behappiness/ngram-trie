@@ -171,6 +171,7 @@ fn main() {
     //println!("{:?}", probabilities[0]);
     
     smoothed_trie.set_all_ruleset_by_length(7);
+    smoothed_trie.fit_smoothing(Some("modified_kneser_ney".to_string()));
 
     // // 475m_tokens
     // //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
