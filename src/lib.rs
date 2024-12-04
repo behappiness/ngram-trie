@@ -137,6 +137,11 @@ impl PySmoothedTrie {
     fn probability_for_token(&self, history: Vec<u16>, predict: u16, rule_set: Vec<String>) -> Vec<(String, f64)> {
         self.smoothed_trie.probability_for_token(&history, predict, &rule_set)
     }
+
+    #[doc = "Get number of nodes at each level"]
+    fn count_nodes(&self) -> Vec<usize> {
+        self.smoothed_trie.count_nodes()
+    }
 }
 
 #[pymodule]

@@ -1,3 +1,4 @@
+#![allow(warnings)]
 use std::{fs, time::Instant};
 
 use crate::trie::*;
@@ -216,5 +217,9 @@ impl SmoothedTrie {
     pub fn set_subgram_ruleset_by_length(&mut self, rule_length: u32) {
         let rule_set = NGramTrie::_calculate_ruleset(rule_length, &["+", "-"]);
         self.set_rule_set(rule_set);
+    }
+
+    pub fn count_nodes(&self) -> Vec<usize> {
+        self.trie.count_nodes()
     }
 }

@@ -332,6 +332,14 @@ impl NGramTrie {
         CACHE_N.clear();
         self.init_cache();
     }
+
+    pub fn count_nodes(&self) -> Vec<usize> {
+        let mut counts = Vec::new();
+        for i in 0..self.n_gram_max_length {
+            counts.push(self.root.find_all_nodes(&vec![None; i as usize]).len());
+        }
+        counts
+    }
 }
 
 impl Hash for NGramTrie {

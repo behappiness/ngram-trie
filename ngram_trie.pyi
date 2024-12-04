@@ -148,3 +148,9 @@ class PySmoothedTrie:
             predict (int): Token ID to predict
         """
         ...
+
+    def count_nodes(self) -> List[int]:
+        """
+        Get number of nodes at each level
+        """
+        ...
