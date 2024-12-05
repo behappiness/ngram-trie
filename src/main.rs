@@ -168,7 +168,25 @@ fn main() {
     // let elapsed = start.elapsed();
     // info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
 
-    start_http_server(smoothed_trie).unwrap();
+    let branching_factors = smoothed_trie.average_branching_factor_per_layer();
+    println!("Average branching factors per layer:");
+    for (i, factor) in branching_factors.iter().enumerate() {
+        println!("Layer {}: {:.2}", i, factor);
+    }
+
+    let mut total_nodes = 0;
+    for layer in 1..=smoothed_trie.trie.n_gram_max_length {
+        let nodes = smoothed_trie.trie.find_all_nodes(vec![None; (layer as u16).into()]).len();
+        total_nodes += nodes;
+    }
+    println!("Total number of nodes in tree: {}", total_nodes);
+
+    let product: f64 = branching_factors.iter().product();
+    println!("Product of branching factors: {:.2}", product);
+
+
+
+    // start_http_server(smoothed_trie).unwrap();
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
@@ -179,7 +197,4 @@ fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
         let probabilities = smoothed_trie.get_prediction_probabilities(&rule);
         smoothed_trie.debug_cache_sizes();
     }
-    let elapsed = start.elapsed();
-    let seq_words = tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1;
-    info!("Time taken for {:?} sequential words predictions: {:.2?}", seq_words, elapsed);
 }
