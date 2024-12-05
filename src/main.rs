@@ -204,8 +204,15 @@ fn main() {
     }
     println!("\nTotal number of nodes in tree: {}", total_nodes);
 
-    let product: f64 = branching_factors.iter().product();
-    println!("Product of branching factors: {:.2}", product);
+    let mut cumprod = Vec::with_capacity(branching_factors.len());
+    let mut running_product = 1.0;
+    for &factor in branching_factors.iter() {
+        running_product *= factor;
+        cumprod.push(running_product);
+    }
+    println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
+
+
 
 
 
