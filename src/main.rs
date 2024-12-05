@@ -69,21 +69,40 @@ fn run_performance_tests(filename: &str) {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PredictionRequest {
+struct UnsmoothedProbabilityRequest {
     history: Vec<u16>,
 }
 
 #[derive(Serialize)]
-struct PredictionResponse {
+struct UnsmoothedProbabilityResponse {
     probabilities: Vec<(String, Vec<(u16, f64)>)>,
 }
 
-async fn predict_probability(
-    req: web::Json<PredictionRequest>, 
+async fn get_unsmoothed_probabilities(
+    req: web::Json<UnsmoothedProbabilityRequest>, 
     smoothed_trie: web::Data<Arc<SmoothedTrie>>
 ) -> impl Responder {
     let probabilities = smoothed_trie.get_unsmoothed_probabilities(&req.history);
-    web::Json(PredictionResponse { probabilities })
+    web::Json(UnsmoothedProbabilityResponse { probabilities })
+}
+
+#[derive(Serialize, Deserialize)]
+struct SmoothedProbabilityRequest {
+    history: Vec<u16>,
+    rule_set: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct SmoothedProbabilityResponse {
+    probabilities: Vec<(String, Vec<(u16, f64)>)>,
+}
+
+async fn get_smoothed_probabilities(
+    req: web::Json<SmoothedProbabilityRequest>, 
+    smoothed_trie: web::Data<Arc<SmoothedTrie>>
+) -> impl Responder {
+    let probabilities = smoothed_trie.get_smoothed_probabilities(&req.history, req.rule_set.clone());
+    web::Json(SmoothedProbabilityResponse { probabilities })
 }
 
 #[tokio::main]
@@ -97,7 +116,8 @@ async fn start_http_server(smoothed_trie: SmoothedTrie) -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(shared_trie.clone()) // Clone the Data wrapper, not the trie itself
-            .service(web::resource("/predict").route(web::post().to(predict_probability)))
+            .service(web::resource("/unsmoothed_predict").route(web::post().to(get_unsmoothed_probabilities)))
+            .service(web::resource("/smoothed_predict").route(web::post().to(get_smoothed_probabilities)))
     })
     .workers(server_workers)
     .bind("127.0.0.1:8080")?
@@ -151,6 +171,7 @@ fn main() {
     //println!("{:?}", probabilities[0]);
     
     smoothed_trie.set_all_ruleset_by_length(7);
+    smoothed_trie.fit_smoothing(Some("modified_kneser_ney".to_string()));
 
     // // 475m_tokens
     // //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
@@ -194,7 +215,7 @@ fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
     let start = Instant::now();
     for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
         let rule = tokens[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
-        let probabilities = smoothed_trie.get_prediction_probabilities(&rule);
+        let probabilities = smoothed_trie.get_smoothed_probabilities(&rule, None);
         smoothed_trie.debug_cache_sizes();
     }
 }

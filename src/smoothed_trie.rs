@@ -100,11 +100,11 @@ impl SmoothedTrie {
         self.trie.get_count(&rule)
     }
 
-    pub fn probability_for_token(&self, history: &[u16], predict: u16) -> Vec<(String, f64)> {
-        let mut rules_smoothed = Vec::<(String, f64)>::new();
+    pub fn probability_for_token(&self, history: &[u16], predict: u16, rule_set: &Vec<String>) -> Vec<(String, f64)> {
+        let mut rules_smoothed = Vec::<(String, f64)>::with_capacity(rule_set.len());
 
         //better to calculate these in order so we can utilize threads down the line better
-        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
+        for r_set in &rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let mut rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
             rule.push(Some(predict));
             rules_smoothed.push((r_set.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule)));
@@ -121,32 +121,37 @@ impl SmoothedTrie {
         debug!("ZERO_COUNT_KEYS size: {}", ZERO_COUNT_KEYS.get(&0).unwrap().len());
     }
 
-    pub fn get_prediction_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<(u16, f64)>)> { 
-        info!("----- Getting prediction probabilities -----");
-        let start = Instant::now();
-        if history.len() >= self.trie.n_gram_max_length as usize {
-            error!("History length must be less than the n-gram max length");
-            panic!("History length must be less than the n-gram max length");
-        }
-        self.trie.cache_find_all_nodes(history, &self.rule_set);
-        debug!("Loaded cache");
-        self.debug_cache_sizes();
+    pub fn get_smoothed_probabilities(&self, history: &[u16], rule_set: Option<Vec<String>>) -> Vec<(String, Vec<(u16, f64)>)> { 
+        //info!("----- Getting smoothed probabilities -----");
+        //let start = Instant::now();
+        // if history.len() >= self.trie.n_gram_max_length as usize {
+        //     error!("History length must be less than the n-gram max length");
+        //     panic!("History length must be less than the n-gram max length");
+        // }
+        let mut rule_set = rule_set.unwrap_or_else(|| self.rule_set.clone());
+        rule_set.sort_by(|a, b| b.cmp(a));
+        rule_set.sort_by(|a, b| a.len().cmp(&b.len()));
+        //self.trie.cache_find_all_nodes(history, &rule_set); //probably it doesn't help
+        //debug!("Loaded cache");
+        //self.debug_cache_sizes();
         let prediction_probabilities: Vec<(u16, Vec<(String, f64)>)> = self.trie.root.children.iter().tqdm()
                 .map(|(token, _)| {
-                    let probabilities = self.probability_for_token(history, *token);
+                    let probabilities = self.probability_for_token(history, *token, &rule_set);
                     (*token, probabilities)
                 })
                 .collect();
 
-        let duration = start.elapsed();
-        info!("Time taken to get prediction probabilities: {:.2?}", duration);
+        //let duration = start.elapsed();
+        //info!("Time taken to get prediction probabilities: {:.2?}", duration);
 
-        let mut flipped_probabilities: Vec<(String, Vec<(u16, f64)>)> = Vec::new();
-        let mut rule_map: std::collections::HashMap<String, Vec<(u16, f64)>> = std::collections::HashMap::new();
+        let mut flipped_probabilities: Vec<(String, Vec<(u16, f64)>)> = Vec::with_capacity(rule_set.len());
+        let mut rule_map: std::collections::HashMap<String, Vec<(u16, f64)>> = std::collections::HashMap::with_capacity(rule_set.len());
 
         for (token, probabilities) in &prediction_probabilities {
             for (rule, prob) in probabilities {
-                rule_map.entry(rule.to_string()).or_insert_with(Vec::new).push((*token, *prob));
+                rule_map.entry(rule.to_string())
+                    .or_insert_with(|| Vec::with_capacity(self.trie.root.children.len()))
+                    .push((*token, *prob));
             }
         }
 
@@ -154,8 +159,6 @@ impl SmoothedTrie {
             flipped_probabilities.push((rule, prob));
         }
 
-        flipped_probabilities.sort_by(|a, b| b.0.cmp(&a.0));
-        flipped_probabilities.sort_by(|a, b| a.0.len().cmp(&b.0.len()));
         flipped_probabilities.iter_mut().for_each(|(_, tokens)| tokens.sort_by(|a, b| a.0.cmp(&b.0)));
 
         // Normalize the probabilities for every rule
