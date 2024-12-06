@@ -222,4 +222,21 @@ impl SmoothedTrie {
     pub fn count_nodes(&self) -> Vec<usize> {
         self.trie.count_nodes()
     }
+
+    pub fn average_branching_factor_per_layer(&self) -> Vec<f64> {
+        let mut branching_factors = Vec::new();
+        for layer in 0..=self.trie.n_gram_max_length-1 {
+            let nodes = self.trie.find_all_nodes(vec![None; layer as usize]);
+            let total_nodes = nodes.len();
+            if total_nodes == 0 {
+                branching_factors.push(0.0);
+                continue;
+            }
+            let total_continuations: usize = nodes.iter()
+                .map(|node| node.children.len())
+                .sum();
+            branching_factors.push(total_continuations as f64 / total_nodes as f64);
+        }
+        branching_factors
+    }
 }

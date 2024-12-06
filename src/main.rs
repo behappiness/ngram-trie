@@ -171,6 +171,7 @@ fn main() {
     //println!("{:?}", probabilities[0]);
     
     smoothed_trie.set_all_ruleset_by_length(7);
+    smoothed_trie.fit_smoothing(Some("modified_kneser_ney".to_string()));
 
     // // 475m_tokens
     // //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
@@ -188,7 +189,34 @@ fn main() {
     // let elapsed = start.elapsed();
     // info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
 
-    start_http_server(smoothed_trie).unwrap();
+    let branching_factors = smoothed_trie.average_branching_factor_per_layer();
+    println!("Average branching factors per layer:");
+    for (i, factor) in branching_factors.iter().enumerate() {
+        println!("Layer {}: {:.2}", i, factor);
+    }
+
+    println!("\nNodes per layer:");
+    let mut total_nodes = 0;
+    for layer in 0..=smoothed_trie.trie.n_gram_max_length {
+        let nodes = smoothed_trie.trie.find_all_nodes(vec![None; layer as usize]).len();
+        total_nodes += nodes;
+        println!("Layer {}: {} nodes", layer, nodes);
+    }
+    println!("\nTotal number of nodes in tree: {}", total_nodes);
+
+    let mut cumprod = Vec::with_capacity(branching_factors.len());
+    let mut running_product = 1.0;
+    for &factor in branching_factors.iter() {
+        running_product *= factor;
+        cumprod.push(running_product);
+    }
+    println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
+
+
+
+
+
+    // start_http_server(smoothed_trie).unwrap();
 }
 
 fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
@@ -199,7 +227,4 @@ fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
         let probabilities = smoothed_trie.get_smoothed_probabilities(&rule, None);
         smoothed_trie.debug_cache_sizes();
     }
-    let elapsed = start.elapsed();
-    let seq_words = tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1;
-    info!("Time taken for {:?} sequential words predictions: {:.2?}", seq_words, elapsed);
 }
