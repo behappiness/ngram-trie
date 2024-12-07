@@ -16,6 +16,9 @@ use lazy_static::lazy_static;
 use quick_cache::sync::Cache;
 use log::{info, error, debug};
 use simple_tqdm::Tqdm;
+use dashmap::DashSet;
+use std::sync::atomic::{AtomicU32, Ordering};
+
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
@@ -24,7 +27,7 @@ const CACHE_SIZE_C: usize = 610*16384; //(rules+25%)*keys = RULES*KEYS
 const CACHE_SIZE_N: usize = 610*3*128; //(rules+25%) = RULES*1.25
 
 lazy_static! {
-    pub static ref CACHE_C: Cache<Vec<Option<u16>>, u32> = Cache::new(CACHE_SIZE_C);
+    pub static ref CACHE_C: Cache<Vec<Option<u16>>, (Arc<Vec<u32>>, u32, (u32, u32, u32))> = Cache::new(CACHE_SIZE_C);
     pub static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
 } 
 
@@ -174,21 +177,47 @@ impl NGramTrie {
     }
 
     pub fn get_count(&self, rule: &[Option<u16>]) -> u32 {
-        if let Some(cache) = CACHE_C.get(rule) {
-            return cache;
-        }
-
         let mut _count = 0;
         if let Some(cache) = CACHE_N.get(rule) {
             _count = cache.par_iter().map(|node| node.count).sum();
         } else if let Some(cache) = CACHE_N.get(&rule[..rule.len() - 1]) {
             _count = cache.par_iter().map(|node| node.get_count(&[rule[rule.len() - 1]])).sum();
-        } else /*if !self.is_rule_in_zero_count_keys(rule)*/ {
+        } else {
             _count = self.root.get_count(rule);
         }
-
-        CACHE_C.insert(rule.to_vec(), _count);
         _count
+    }
+
+    pub fn get_token_count_map(&self, rule: &[Option<u16>]) -> (Arc<Vec<u32>>, u32, (u32, u32, u32)) {
+        if let Some(cache) = CACHE_C.get(rule) {
+            return (cache.0.clone(), cache.1, cache.2);
+        }
+        let nodes = self.find_all_nodes(rule);
+
+        let token_count_map: Vec<AtomicU32> = (0..self.root.children.len()).map(|_| AtomicU32::new(0)).collect();
+        let n1 = DashSet::<u16>::new();
+        let n2 = DashSet::<u16>::new();
+        let n3 = DashSet::<u16>::new();
+
+        //needs testing on big dataset
+        nodes.par_iter().for_each(|node| {
+            node.children.par_iter().for_each(|(key, child)| {
+                match child.count {
+                    1 => { n1.insert(*key); },
+                    2 => { n2.insert(*key); },
+                    _ => { n3.insert(*key); }
+                }
+                token_count_map[*key as usize].fetch_add(child.count, Ordering::Relaxed);
+            });
+        });
+        //par doesnt help on small dataset so it wont help on big one (small array 16384)
+        let token_count_map: Vec<u32> = token_count_map.iter().map(|x| x.load(Ordering::Relaxed)).collect();
+        let total_count = token_count_map.iter().sum();
+
+        let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+        let token_count_map_arc = Arc::new(token_count_map);
+        CACHE_C.insert(rule.to_vec(), (token_count_map_arc.clone(), total_count, ns));
+        (token_count_map_arc, total_count, ns)
     }
 
     pub fn find_all_nodes(&self, rule: &[Option<u16>]) -> Arc<Vec<Arc<TrieNode>>> {
@@ -210,7 +239,6 @@ impl NGramTrie {
             for i in (0..rule.len()).rev() {
                 let _rule = Self::_preprocess_rule_context(&history, Some(&rule[i..].to_string()));
                 self.find_all_nodes(&_rule);
-                self.get_count(&_rule);
             }
         }
     }
@@ -298,10 +326,9 @@ impl NGramTrie {
     }
     
     pub fn init_cache(&self) {
-        CACHE_C.insert(vec![], self.root.get_count(&vec![]));
         let nodes_arc = Arc::new(vec![self.root.clone()]);
         CACHE_N.insert(vec![], nodes_arc);
-
+        CACHE_C.insert(vec![], self.get_token_count_map(&vec![]));
     }
 
     pub fn reset_cache(&self) {

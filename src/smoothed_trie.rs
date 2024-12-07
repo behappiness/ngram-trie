@@ -10,6 +10,7 @@ use serde_json;
 use hashbrown::HashMap;
 
 use rayon::ThreadPoolBuilder;
+use rayon::iter::*;
 
 
 pub struct SmoothedTrie {
@@ -125,7 +126,8 @@ impl SmoothedTrie {
             self.rule_set.clone()
         };
 
-        let mut smoothed_probabilities: Vec<(String, Vec<(f64)>)> = rule_set.iter().filter(|r| r.len() <= history.len()).map(|r| {
+        //the par iter helps here ~10% on small dataset if unsmoothed is done first
+        let mut smoothed_probabilities: Vec<(String, Vec<(f64)>)> = rule_set.par_iter().filter(|r| r.len() <= history.len()).map(|r| {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r));
             (r.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule).to_vec())
         }).collect();
@@ -134,12 +136,7 @@ impl SmoothedTrie {
         // info!("Time taken to get smoothed probabilities: {:.2?}", duration);
 
         // Normalize the probabilities for every rule
-        for (_, tokens) in &mut smoothed_probabilities {
-            let total_prob: f64 = tokens.iter().map(|(prob)| prob).sum();
-            for (prob) in tokens.iter_mut() {
-                *prob /= total_prob;
-            }
-        }
+        Self::normalize_probabilities(&mut smoothed_probabilities);
 
         smoothed_probabilities
     }
@@ -148,31 +145,34 @@ impl SmoothedTrie {
 
         let mut rules_unsmoothed = Vec::<(String, Vec<f64>)>::new();
 
+        //have to do in order to utilise the cache, maybe possible to use 2 or 4 threads
         for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
-            let vocabulary_size = self.trie.root.children.len();
-            let nodes = self.trie.find_all_nodes(&rule);
 
-            let mut token_count_map: Vec<u32> = vec![0; vocabulary_size];
-            let mut result: Vec<f64> = vec![0.0; vocabulary_size];
+            let (token_count_map, total_count, _) = self.trie.get_token_count_map(&rule);
+            let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
         
-            nodes.iter().for_each(|node| {
-                node.children.iter().for_each(|(key, child)| {
-                    token_count_map[*key as usize] += child.count;
-                });
-            });
-
-            let total_count: u32 = token_count_map.iter().sum();
             if total_count > 0 {
-                for i in 0..vocabulary_size {
-                    result[i] = token_count_map[i] as f64 / total_count as f64;
-                }
+                //par doesnt help on small dataset so it wont help on big one (small array 16384)
+                result.iter_mut().enumerate().for_each(|(i, res)| {
+                    *res = token_count_map[i] as f64 / total_count as f64;
+                });
             }
-                
+            
             rules_unsmoothed.push((r_set.to_string(), result));
         }
-        
+        // Already normalized by the nature of it
         rules_unsmoothed
+    }
+
+    pub fn normalize_probabilities(probabilities: &mut Vec<(String, Vec<f64>)>) {
+        // Normalize the probabilities for every rule
+        for (_, tokens) in probabilities {
+            let total_prob: f64 = tokens.iter().map(|(prob)| prob).sum();
+            for (prob) in tokens.iter_mut() {
+                *prob /= total_prob;
+            }
+        }
     }
 
     pub fn set_all_ruleset_by_length(&mut self, rule_length: u32) {

@@ -210,34 +210,16 @@ impl Smoothing for ModifiedBackoffKneserNey {
         if let Some(cached_value) = CACHE_S.get(rule) {
             return cached_value.clone();
         }
-        let nodes = self.trie.find_all_nodes(&rule);
 
-        let mut n1 = HashSet::<u16>::new();
-        let mut n2 = HashSet::<u16>::new();
-        let mut n3 = HashSet::<u16>::new();
-
-        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
-        let mut result: Vec<f64> = vec![0.0; self.vocabulary_size];
-
-        nodes.iter().for_each(|node| {
-            node.children.iter().for_each(|(key, child)| {
-                match child.count { //maybe we have to sum over the keys and then do the match
-                    1 => { n1.insert(*key); },
-                    2 => { n2.insert(*key); },
-                    _ => { n3.insert(*key); }
-                }
-                token_count_map[*key as usize] += child.count;
-            });
-        });
-
-        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
-        let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+        let (token_count_map, c_i_minus_1, ns) = trie.get_token_count_map(&rule);
+        let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
 
         let s_map = self.smoothing(trie, &rule[..rule.len()-1]);
 
-        for i in 0..self.vocabulary_size {
-            result[i] = self.calc_smoothed(token_count_map[i], c_i_minus_1, rule.len(), ns, s_map[i]);
-        }
+        //par doesnt help on small dataset so it wont help on big one (small array 16384)
+        result.iter_mut().enumerate().for_each(|(i, res)| {
+            *res = self.calc_smoothed(token_count_map[i], c_i_minus_1, rule.len(), ns, s_map[i]);
+        });
 
         let _result = Arc::new(result);
         CACHE_S.insert(rule.to_vec(), _result.clone());
@@ -274,29 +256,16 @@ impl Smoothing for StupidBackoff {
         if let Some(cached_value) = CACHE_S.get(rule) {
             return cached_value.clone();
         }
-        let nodes = trie.find_all_nodes(&rule);
 
-        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
-        let mut result: Vec<f64> = vec![0.0; self.vocabulary_size];
+        let (token_count_map, c_i_minus_1, _) = trie.get_token_count_map(&rule);
+        let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
 
-        nodes.iter().for_each(|node| {
-            node.children.iter().for_each(|(key, child)| {
-                token_count_map[*key as usize] += child.count;
-            });
+        let s_map = self.smoothing(trie, &rule[..rule.len()-1]);
+
+        //par doesnt help on small dataset so it wont help on big one (small array 16384)
+        result.iter_mut().enumerate().for_each(|(i, res)| {
+            *res = self.calc_stupid_backoff(token_count_map[i], c_i_minus_1, s_map[i]);
         });
-
-        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
-
-        let s_map;
-        if rule.len() > 0 {
-            s_map = self.smoothing(trie, &rule[..rule.len()-1]);
-        } else {
-            s_map = Arc::new(vec![0.0; self.vocabulary_size]);
-        }
-
-        for i in 0..self.vocabulary_size {
-            result[i] = self.calc_stupid_backoff(token_count_map[i], c_i_minus_1, s_map[i]);
-        }
 
         let _result = Arc::new(result);
         CACHE_S.insert(rule.to_vec(), _result.clone());

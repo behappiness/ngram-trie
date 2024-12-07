@@ -159,7 +159,7 @@ fn main() {
     // info!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
-    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
     // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015];
     // smoothed_trie.set_all_ruleset_by_length(7);
     // let probabilities = smoothed_trie.get_smoothed_probabilities(&history, None);
@@ -218,7 +218,10 @@ fn main() {
     println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
 
 
-    //test_seq_smoothing(&mut smoothed_trie, history);
+    for _ in 0..100 {
+        test_seq_smoothing(&mut smoothed_trie, history.clone());
+        smoothed_trie.reset_cache();
+    }
 
 
     // start_http_server(smoothed_trie).unwrap();
@@ -229,8 +232,9 @@ fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, history: Vec<u16>) {
     let start = Instant::now();
     for i in 0..history.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
         let _history = history[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
-        let probabilities = smoothed_trie.get_unsmoothed_probabilities(&_history);
-        smoothed_trie.debug_cache_sizes();
+        let unsmoothed_probabilities = smoothed_trie.get_unsmoothed_probabilities(&_history);
+        let smoothed_probabilities = smoothed_trie.get_smoothed_probabilities(&_history, None);
+        //smoothed_trie.debug_cache_sizes();
     }
     let elapsed = start.elapsed();
     info!("Time taken for {} context predictions: {:.2?}", history.len() - smoothed_trie.trie.n_gram_max_length as usize + 1, elapsed);
