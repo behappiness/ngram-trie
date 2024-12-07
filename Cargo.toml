@@ -40,6 +40,7 @@ pyo3-log = "0.11.0"
 chrono = "0.4.38"
 dashmap = "6.1.0"
 rand = "0.8.5"
+hashbrown = "0.15.2"
 
 [profile.dev]
 opt-level = 3

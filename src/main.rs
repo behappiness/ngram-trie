@@ -4,7 +4,7 @@ pub mod smoothing;
 pub mod smoothed_trie;
 
 use trie::{NGramTrie, trienode::TrieNode, CACHE_C, CACHE_N};
-use smoothing::{ModifiedBackoffKneserNey, CACHE_S_C, CACHE_S_N};
+use smoothing::{ModifiedBackoffKneserNey, CACHE_S};
 use sorted_vector_map::SortedVectorMap;
 use smoothed_trie::SmoothedTrie;
 
@@ -94,7 +94,7 @@ struct SmoothedProbabilityRequest {
 
 #[derive(Serialize)]
 struct SmoothedProbabilityResponse {
-    probabilities: Vec<(String, Vec<(u16, f64)>)>,
+    probabilities: Vec<(String, Vec<(f64)>)>,
 }
 
 async fn get_smoothed_probabilities(
@@ -143,12 +143,12 @@ fn main() {
     
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(8, 2_usize.pow(14)), None);
 
-    // let tokens = NGramTrie::load_json("170k_tokens.json", None).unwrap();
-    // smoothed_trie.fit(tokens, 8, 0, None, Some("_modified_kneser_ney".to_string()));
+    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
+    smoothed_trie.fit(tokens, 8, 2_usize.pow(14), None, Some("modified_kneser_ney".to_string()));
 
     // smoothed_trie.save("trie");
 
-    smoothed_trie.load("ngram");
+    // smoothed_trie.load("ngram");
 
     // info!("----- Getting rule count -----");
     // let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));
@@ -158,20 +158,23 @@ fn main() {
     // info!("Count: {}", count);
     // info!("Time taken: {:.2?}", elapsed);
     
-    // // 170k_tokens
-    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
-    // let history = vec![987, 4015, 935, 2940, 3947, 987];
-    // smoothed_trie.set_all_ruleset_by_length(3);
-    // let probabilities = smoothed_trie.get_prediction_probabilities(&history);
+    // 170k_tokens
+    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015];
+    // smoothed_trie.set_all_ruleset_by_length(7);
+    // let probabilities = smoothed_trie.get_smoothed_probabilities(&history, None);
 
     // for (rule, token_probs) in &probabilities {
-    //     let total_prob: f64 = token_probs.iter().map(|(_, prob)| prob).sum();
-    //     println!("Rule: {}, Total Probability: {}", rule, total_prob);
+    //     let total_prob: f64 = token_probs.iter().map(|prob| prob).sum();
+    //     println!("Rule: {}, Total Probability: {:.6}", rule, total_prob);
     // }
-    //println!("{:?}", probabilities[0]);
+    // for p in probabilities[369].1.iter() {
+    //     print!("{:.5} ", p);
+    // }
+    // println!("argmax: {:?}", probabilities[369].1.iter().max_by(|a, b| a.partial_cmp(b).unwrap()));
     
-    smoothed_trie.set_all_ruleset_by_length(7);
-    smoothed_trie.fit_smoothing(Some("modified_kneser_ney".to_string()));
+    // smoothed_trie.set_all_ruleset_by_length(7);
+    // smoothed_trie.fit_smoothing(Some("modified_kneser_ney".to_string()));
 
     // // 475m_tokens
     // //let history = vec![157, 973, 712, 132, 3618, 237, 132, 4988, 134, 234, 342, 330, 4389, 3143];
@@ -198,7 +201,7 @@ fn main() {
     println!("\nNodes per layer:");
     let mut total_nodes = 0;
     for layer in 0..=smoothed_trie.trie.n_gram_max_length {
-        let nodes = smoothed_trie.trie.find_all_nodes(vec![None; layer as usize]).len();
+        let nodes = smoothed_trie.trie.find_all_nodes(&vec![None; layer as usize]).len();
         total_nodes += nodes;
         println!("Layer {}: {} nodes", layer, nodes);
     }
@@ -213,18 +216,20 @@ fn main() {
     println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
 
 
-
+    test_seq_smoothing(&mut smoothed_trie, history);
 
 
     // start_http_server(smoothed_trie).unwrap();
 }
 
-fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, tokens: Vec<u16>) {
+fn test_seq_smoothing(smoothed_trie: &mut SmoothedTrie, history: Vec<u16>) {
     info!("----- Testing smoothing -----");
     let start = Instant::now();
-    for i in 0..tokens.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
-        let rule = tokens[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
-        let probabilities = smoothed_trie.get_smoothed_probabilities(&rule, None);
+    for i in 0..history.len() - smoothed_trie.trie.n_gram_max_length as usize + 1 {
+        let _history = history[i..i + smoothed_trie.trie.n_gram_max_length as usize - 1].to_vec();
+        let probabilities = smoothed_trie.get_unsmoothed_probabilities(&_history);
         smoothed_trie.debug_cache_sizes();
     }
+    let elapsed = start.elapsed();
+    info!("Time taken for {} context predictions: {:.2?}", history.len() - smoothed_trie.trie.n_gram_max_length as usize + 1, elapsed);
 }

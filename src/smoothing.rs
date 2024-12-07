@@ -2,24 +2,22 @@ use crate::trie::NGramTrie;
 use std::time::Instant;
 use serde::{Serialize, Deserialize};
 use rclite::Arc;
-use rayon::{prelude::*, vec};
+use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
-use dashmap::DashSet;
-use log::{info, debug};
+use log::info;
+use hashbrown::HashSet;
 
 // the dataset size matters as well
-const CACHE_SIZE_S_C: usize = 610*16384*32; //(rules+25%)*keys = RULES*KEYS
-const CACHE_SIZE_S_N: usize = 610*3*32; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_S: usize = 610*3*128; //(rules+25%) = RULES
 
 lazy_static! {
-    pub static ref CACHE_S_C: Cache<Vec<Option<u16>>, f64> = Cache::new(CACHE_SIZE_S_C);
-    pub static ref CACHE_S_N: Cache<Vec<Option<u16>>, (u32, u32, u32)> = Cache::new(CACHE_SIZE_S_N);
+    pub static ref CACHE_S: Cache<Vec<Option<u16>>, Arc<Vec<f64>>> = Cache::new(CACHE_SIZE_S);
 }   
 
 pub trait Smoothing: Sync + Send {
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64;
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>>;
     fn save(&self, filename: &str);
     fn load(&mut self, filename: &str);
     fn reset_cache(&self);
@@ -30,17 +28,23 @@ pub struct ModifiedBackoffKneserNey {
     pub d1: Vec<f64>,
     pub d2: Vec<f64>,
     pub d3: Vec<f64>,
-    pub uniform: f64
+    pub uniform: f64,
+    pub vocabulary_size: usize,
+    #[serde(skip)]
+    pub trie: Arc<NGramTrie>
 }
 
 impl ModifiedBackoffKneserNey {
     pub fn new(trie: Arc<NGramTrie>) -> Self {
-        let (_d1, _d2, _d3, _uniform) = Self::calculate_d_values(trie);
+        let _vocabulary_size = trie.root.children.len() as usize;
+        let (_d1, _d2, _d3, _uniform) = Self::calculate_d_values(trie.clone());
         ModifiedBackoffKneserNey {
             d1: _d1,
             d2: _d2,
             d3: _d3,
-            uniform: _uniform
+            uniform: _uniform,
+            vocabulary_size: _vocabulary_size,
+            trie: trie
         }
     }
 
@@ -59,7 +63,7 @@ impl ModifiedBackoffKneserNey {
             let n2 = Arc::new(AtomicU32::new(0));
             let n3 = Arc::new(AtomicU32::new(0));
             let n4 = Arc::new(AtomicU32::new(0));
-            trie.find_all_nodes(vec![None; level as usize]).par_iter().for_each(|node| {
+            trie.find_all_nodes(&vec![None; level as usize]).par_iter().for_each(|node| {
                 match node.count {
                     1 => { n1.fetch_add(1, Ordering::SeqCst); },
                     2 => { n2.fetch_add(1, Ordering::SeqCst); },
@@ -95,29 +99,54 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
-    pub fn count_unique_ns(trie: Arc<NGramTrie>, rule: Vec<Option<u16>>) -> (u32, u32, u32) {
-        if let Some(cached_value) = CACHE_S_N.get(&rule) {
-            return cached_value;
+    pub fn calc_smoothed(&self, c_i: u32, c_i_minus_1: u32, level: usize, ns: (u32, u32, u32), s: f64) -> f64 {
+        if c_i_minus_1 > 0 {
+            let d = match c_i {
+                0 => 0.0,
+                1 => self.d1[level],
+                2 => self.d2[level],
+                _ => self.d3[level]
+            };
+
+            let alpha = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64;
+            let gamma = (self.d1[level] * ns.0 as f64 + self.d2[level] * ns.1 as f64 + self.d3[level] * ns.2 as f64) / c_i_minus_1 as f64;
+            alpha + gamma * s
+        } else {
+            s
         }
-        let n1 = DashSet::<u16>::new();
-        let n2 = DashSet::<u16>::new();
-        let n3 = DashSet::<u16>::new();
-        trie.find_all_nodes(rule.clone()).iter().for_each(|node| {
+    }
+
+    pub fn init_cache(&self) {
+        let nodes = self.trie.find_all_nodes(&vec![]);
+
+        let mut n1 = HashSet::<u16>::new();
+        let mut n2 = HashSet::<u16>::new();
+        let mut n3 = HashSet::<u16>::new();
+
+        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
+        let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
+
+        nodes.iter().for_each(|node| {
             node.children.iter().for_each(|(key, child)| {
                 match child.count { //maybe we have to sum over the keys and then do the match
                     1 => { n1.insert(*key); },
                     2 => { n2.insert(*key); },
                     _ => { n3.insert(*key); }
                 }
+                token_count_map[*key as usize] += child.count;
             });
         });
-        let result = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
-        CACHE_S_N.insert(rule, result);
-        result
-    }
 
-    pub fn init_cache(&self) {
-        CACHE_S_C.insert(vec![], self.uniform);
+        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
+        let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+
+        for i in 0..self.vocabulary_size {
+            result[i] = self.calc_smoothed(token_count_map[i], c_i_minus_1, 0, ns, self.uniform);
+        }
+
+        let _result = Arc::new(result);
+
+        CACHE_S.insert(vec![], _result);
     }
 }
 
@@ -139,82 +168,104 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
     fn reset_cache(&self) {
         info!("----- Resetting smoothing cache -----");
-        CACHE_S_C.clear();
-        CACHE_S_N.clear();
+        CACHE_S.clear();
         self.init_cache();
     }
 
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
-        if let Some(cached_value) = CACHE_S_C.get(rule) {
-            return cached_value;
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>> {
+        if let Some(cached_value) = CACHE_S.get(rule) {
+            return cached_value.clone();
+        }
+        let nodes = self.trie.find_all_nodes(&rule);
+
+        let mut n1 = HashSet::<u16>::new();
+        let mut n2 = HashSet::<u16>::new();
+        let mut n3 = HashSet::<u16>::new();
+
+        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
+        let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
+
+        nodes.iter().for_each(|node| {
+            node.children.iter().for_each(|(key, child)| {
+                match child.count { //maybe we have to sum over the keys and then do the match
+                    1 => { n1.insert(*key); },
+                    2 => { n2.insert(*key); },
+                    _ => { n3.insert(*key); }
+                }
+                token_count_map[*key as usize] += child.count;
+            });
+        });
+
+        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
+        let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+
+        let s_map = self.smoothing(trie, &rule[..rule.len()-1]);
+
+        for i in 0..self.vocabulary_size {
+            result[i] = self.calc_smoothed(token_count_map[i], c_i_minus_1, rule.len(), ns, s_map[i]);
         }
 
-        //let w_i = &rule[rule.len() - 1];
-        let w_i_minus_1 = &rule[..rule.len() - 1];
-
-        let c_i_minus_1 = trie.get_count(&w_i_minus_1);
-        
-        let result = if c_i_minus_1 > 0 {
-            let (n1, n2, n3) = Self::count_unique_ns(trie.clone(), w_i_minus_1.to_vec());
-
-            let c_i = trie.get_count(&rule);
-
-            let level = trie.n_gram_max_length as usize - rule.len();
-
-            let d = match c_i {
-                0 => 0.0,
-                1 => self.d1[level],
-                2 => self.d2[level],
-                _ => self.d3[level]
-            };
-
-            let alpha = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64;
-            if n1 == 0 && n2 == 0 && n3 == 0 {
-                alpha
-            } else {
-                let gamma = (self.d1[level] * n1 as f64 + self.d2[level] * n2 as f64 + self.d3[level] * n3 as f64) / c_i_minus_1 as f64;
-
-                alpha + gamma * self.smoothing(trie.clone(), &rule[1..])
-            }
-        } else {
-            self.smoothing(trie.clone(), &rule[1..])
-        };
-        CACHE_S_C.insert(rule.to_vec(), result);
-        result
+        let _result = Arc::new(result);
+        CACHE_S.insert(rule.to_vec(), _result.clone());
+        _result
     }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StupidBackoff {
     pub backoff_factor: f64,
+    pub vocabulary_size: usize
 }
 
 impl StupidBackoff {
-    pub fn new(backoff_factor: Option<f64>) -> Self {
-        StupidBackoff { backoff_factor: backoff_factor.unwrap_or(0.4) }
+    pub fn new(trie: Arc<NGramTrie>, backoff_factor: Option<f64>) -> Self {
+        StupidBackoff { backoff_factor: backoff_factor.unwrap_or(0.4), vocabulary_size: trie.root.children.len() as usize }
     }
 
     pub fn init_cache(&self) {
-        CACHE_S_C.insert(vec![], 0.0);
+        CACHE_S.insert(vec![], Arc::new(vec![0.0; self.vocabulary_size]));
+    }
+
+    pub fn calc_stupid_backoff(&self, c_i: u32, c_i_minus_1: u32, s: f64) -> f64 {
+        if c_i > 0 {
+            c_i as f64 / c_i_minus_1 as f64
+        } else {
+            self.backoff_factor * s
+        }
     }
 }
 
 impl Smoothing for StupidBackoff {
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> f64 {
-        if let Some(cached_value) = CACHE_S_C.get(rule) {
-            return cached_value;
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>> {
+        if let Some(cached_value) = CACHE_S.get(rule) {
+            return cached_value.clone();
         }
-        let c_i = trie.get_count(&rule);
-        let mut _result = 0.0;
-        if c_i > 0 {
-            let c_i_minus_1 = trie.get_count(&rule[..rule.len() - 1]); //cannot be 0 if higher order ngrams is non-zero
-            _result = c_i as f64 / c_i_minus_1 as f64;
-        } else if rule.len() > 1 {
-            _result = self.backoff_factor * self.smoothing(trie, &rule[1..]);
+        let nodes = trie.find_all_nodes(&rule);
+
+        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
+        let mut result: Vec<f64> = vec![0.0; self.vocabulary_size];
+
+        nodes.iter().for_each(|node| {
+            node.children.iter().for_each(|(key, child)| {
+                token_count_map[*key as usize] += child.count;
+            });
+        });
+
+        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
+
+        let s_map;
+        if rule.len() > 0 {
+            s_map = self.smoothing(trie, &rule[..rule.len()-1]);
         } else {
-            _result = 0.0;
+            s_map = Arc::new(vec![0.0; self.vocabulary_size]);
         }
-        CACHE_S_C.insert(rule.to_vec(), _result);
+
+        for i in 0..self.vocabulary_size {
+            result[i] = self.calc_stupid_backoff(token_count_map[i], c_i_minus_1, s_map[i]);
+        }
+
+        let _result = Arc::new(result);
+        CACHE_S.insert(rule.to_vec(), _result.clone());
         _result
     }
 
@@ -234,8 +285,7 @@ impl Smoothing for StupidBackoff {
 
     fn reset_cache(&self) {
         info!("----- Resetting stupid backoff cache -----");
-        CACHE_S_C.clear();
-        CACHE_S_N.clear();
+        CACHE_S.clear();
         self.init_cache();
     }
 }
