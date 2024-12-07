@@ -126,7 +126,7 @@ impl SmoothedTrie {
             self.rule_set.clone()
         };
 
-        //the par iter helps here ~10% on small dataset if unsmoothed is done first
+        //needs testing on big dataset
         let mut smoothed_probabilities: Vec<(String, Vec<(f64)>)> = rule_set.par_iter().filter(|r| r.len() <= history.len()).map(|r| {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r));
             (r.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule).to_vec())
@@ -145,8 +145,8 @@ impl SmoothedTrie {
 
         let mut rules_unsmoothed = Vec::<(String, Vec<f64>)>::new();
 
-        //have to do in order to utilise the cache, maybe possible to use 2 or 4 threads
-        for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
+        //needs testing on big dataset
+        for r_set in &self.rule_set.par_iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
 
             let (token_count_map, total_count, _) = self.trie.get_token_count_map(&rule);

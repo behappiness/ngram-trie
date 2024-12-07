@@ -66,17 +66,17 @@ impl ModifiedBackoffKneserNey {
             // using root node so it doesn't cache anything
             trie.root.find_all_nodes(&vec![None; level as usize]).par_iter().for_each(|node| {
                 match node.count {
-                    1 => { n1.fetch_add(1, Ordering::SeqCst); },
-                    2 => { n2.fetch_add(1, Ordering::SeqCst); },
-                    3 => { n3.fetch_add(1, Ordering::SeqCst); },
-                    4 => { n4.fetch_add(1, Ordering::SeqCst); },
+                    1 => { n1.fetch_add(1, Ordering::Relaxed); },
+                    2 => { n2.fetch_add(1, Ordering::Relaxed); },
+                    3 => { n3.fetch_add(1, Ordering::Relaxed); },
+                    4 => { n4.fetch_add(1, Ordering::Relaxed); },
                     _ => {}
                 }
             });
-            ns[level as usize - 1][0] = n1.load(Ordering::SeqCst);
-            ns[level as usize - 1][1] = n2.load(Ordering::SeqCst);
-            ns[level as usize - 1][2] = n3.load(Ordering::SeqCst);
-            ns[level as usize - 1][3] = n4.load(Ordering::SeqCst);
+            ns[level as usize - 1][0] = n1.load(Ordering::Relaxed);
+            ns[level as usize - 1][1] = n2.load(Ordering::Relaxed);
+            ns[level as usize - 1][2] = n3.load(Ordering::Relaxed);
+            ns[level as usize - 1][3] = n4.load(Ordering::Relaxed);
         }
 
         let uniform = 1.0 / trie.root.children.len() as f64;
