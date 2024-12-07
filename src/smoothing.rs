@@ -6,8 +6,8 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use quick_cache::sync::Cache;
 use lazy_static::lazy_static;
-use log::info;
-use hashbrown::HashSet;
+use log::{info, debug};
+use hashbrown::{HashSet, HashMap};
 
 // the dataset size matters as well
 const CACHE_SIZE_S: usize = 610*3*128; //(rules+25%) = RULES
@@ -28,7 +28,7 @@ pub struct ModifiedBackoffKneserNey {
     pub d1: Vec<f64>,
     pub d2: Vec<f64>,
     pub d3: Vec<f64>,
-    pub uniform: f64,
+    pub unigram: Vec<f64>,
     pub vocabulary_size: usize,
     #[serde(skip)]
     pub trie: Arc<NGramTrie>
@@ -36,13 +36,13 @@ pub struct ModifiedBackoffKneserNey {
 
 impl ModifiedBackoffKneserNey {
     pub fn new(trie: Arc<NGramTrie>) -> Self {
-        let _vocabulary_size = trie.root.children.len() as usize;
+        let _vocabulary_size = trie.root.children.len();
         let (_d1, _d2, _d3, _uniform) = Self::calculate_d_values(trie.clone());
         ModifiedBackoffKneserNey {
             d1: _d1,
             d2: _d2,
             d3: _d3,
-            uniform: _uniform,
+            unigram: Self::calculate_unigram_distribution(trie.clone()),
             vocabulary_size: _vocabulary_size,
             trie: trie
         }
@@ -63,7 +63,8 @@ impl ModifiedBackoffKneserNey {
             let n2 = Arc::new(AtomicU32::new(0));
             let n3 = Arc::new(AtomicU32::new(0));
             let n4 = Arc::new(AtomicU32::new(0));
-            trie.find_all_nodes(&vec![None; level as usize]).par_iter().for_each(|node| {
+            // using root node so it doesn't cache anything
+            trie.root.find_all_nodes(&vec![None; level as usize]).par_iter().for_each(|node| {
                 match node.count {
                     1 => { n1.fetch_add(1, Ordering::SeqCst); },
                     2 => { n2.fetch_add(1, Ordering::SeqCst); },
@@ -99,6 +100,39 @@ impl ModifiedBackoffKneserNey {
         (d1, d2, d3, uniform)
     }
 
+    #[doc = "The unigram distribution \\( P_{\text{KN}}(w) \\) is used as the base case in this back-off process. It is calculated as:\n\
+        \\[ \n\
+        P_{\text{KN}}(w) = \\frac{\text{Number of unique bigrams ending in } w}{\text{Total number of unique bigrams}} \n\
+        \\]"]
+    pub fn calculate_unigram_distribution(trie: Arc<NGramTrie>) -> Vec<f64> {
+        let mut continuation_counts: HashMap<u16, HashSet<u16>> = HashMap::new();
+        let mut unigram: Vec<f64> = vec![0.0; trie.root.children.len()];
+
+        trie.root.children.iter().for_each(|(first_key, child)| {
+            child.children.iter().for_each(|(second_key, _)| {
+                continuation_counts.entry(*second_key).or_insert_with(HashSet::new).insert(*first_key);
+            });
+        });
+
+        // Calculate total number of unique bigrams
+        let total_unique_bigrams: usize = continuation_counts.values().map(|set| set.len()).sum();
+
+        // Calculate unigram distribution
+        for (key, contexts) in continuation_counts.iter() {
+            unigram[*key as usize] = contexts.len() as f64 / total_unique_bigrams as f64;
+        }
+
+        // Normalize the unigram array
+        let sum: f64 = unigram.iter().sum();
+        if sum > 0.0 {
+        for value in unigram.iter_mut() {
+                *value /= sum;
+            }
+        }
+        debug!("Sum of unigrams: {:.4}", unigram.iter().sum::<f64>());
+        unigram
+    }
+
     pub fn calc_smoothed(&self, c_i: u32, c_i_minus_1: u32, level: usize, ns: (u32, u32, u32), s: f64) -> f64 {
         if c_i_minus_1 > 0 {
             let d = match c_i {
@@ -117,34 +151,34 @@ impl ModifiedBackoffKneserNey {
     }
 
     pub fn init_cache(&self) {
-        let nodes = self.trie.find_all_nodes(&vec![]);
+        // let nodes = self.trie.find_all_nodes(&vec![]);
 
-        let mut n1 = HashSet::<u16>::new();
-        let mut n2 = HashSet::<u16>::new();
-        let mut n3 = HashSet::<u16>::new();
+        // let mut n1 = HashSet::<u16>::new();
+        // let mut n2 = HashSet::<u16>::new();
+        // let mut n3 = HashSet::<u16>::new();
 
-        let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
-        let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
+        // let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
+        // let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
 
-        nodes.iter().for_each(|node| {
-            node.children.iter().for_each(|(key, child)| {
-                match child.count { //maybe we have to sum over the keys and then do the match
-                    1 => { n1.insert(*key); },
-                    2 => { n2.insert(*key); },
-                    _ => { n3.insert(*key); }
-                }
-                token_count_map[*key as usize] += child.count;
-            });
-        });
+        // nodes.iter().for_each(|node| {
+        //     node.children.iter().for_each(|(key, child)| {
+        //         match child.count { //maybe we have to sum over the keys and then do the match
+        //             1 => { n1.insert(*key); },
+        //             2 => { n2.insert(*key); },
+        //             _ => { n3.insert(*key); }
+        //         }
+        //         token_count_map[*key as usize] += child.count;
+        //     });
+        // });
 
-        let c_i_minus_1 = token_count_map.iter().sum::<u32>();
-        let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
+        // let c_i_minus_1 = token_count_map.iter().sum::<u32>();
+        // let ns = (n1.len() as u32, n2.len() as u32, n3.len() as u32);
 
-        for i in 0..self.vocabulary_size {
-            result[i] = self.calc_smoothed(token_count_map[i], c_i_minus_1, 0, ns, self.uniform);
-        }
+        // for i in 0..self.vocabulary_size {
+        //     result[i] = self.calc_smoothed(token_count_map[i], c_i_minus_1, 0, ns, self.uniform);
+        // }
 
-        let _result = Arc::new(result);
+        let _result = Arc::new(self.unigram.clone());
 
         CACHE_S.insert(vec![], _result);
     }
@@ -183,7 +217,7 @@ impl Smoothing for ModifiedBackoffKneserNey {
         let mut n3 = HashSet::<u16>::new();
 
         let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
-        let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
+        let mut result: Vec<f64> = vec![0.0; self.vocabulary_size];
 
         nodes.iter().for_each(|node| {
             node.children.iter().for_each(|(key, child)| {

@@ -7,6 +7,7 @@ use simple_tqdm::Tqdm;
 use crate::smoothing::*;
 use log::{info, debug, error};
 use serde_json;
+use hashbrown::HashMap;
 
 use rayon::ThreadPoolBuilder;
 
@@ -84,6 +85,7 @@ impl SmoothedTrie {
     pub fn fit_smoothing(&mut self, smoothing_name: Option<String>) {
         self.reset_cache();
         self.smoothing = Self::choose_smoothing(self.trie.clone(), smoothing_name);
+        self.smoothing.reset_cache();
     }
 
     pub fn choose_smoothing(trie: Arc<NGramTrie>, smoothing_name: Option<String>) -> Box<dyn Smoothing> {
@@ -108,12 +110,12 @@ impl SmoothedTrie {
     }
 
     pub fn get_smoothed_probabilities(&self, history: &[u16], rule_set: Option<Vec<String>>) -> Vec<(String, Vec<f64>)> { 
-        info!("----- Getting smoothed probabilities -----");
-        let start = Instant::now();
-        if history.len() >= self.trie.n_gram_max_length as usize {
-            error!("History length must be less than the n-gram max length");
-            panic!("History length must be less than the n-gram max length");
-        }
+        // info!("----- Getting smoothed probabilities -----");
+        // let start = Instant::now();
+        // if history.len() >= self.trie.n_gram_max_length as usize {
+        //     error!("History length must be less than the n-gram max length");
+        //     panic!("History length must be less than the n-gram max length");
+        // }
         let mut rule_set = if let Some(rs) = rule_set {
             let mut rs = rs;
             rs.sort_by(|a, b| b.cmp(a));
@@ -128,46 +130,46 @@ impl SmoothedTrie {
             (r.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule).to_vec())
         }).collect();
 
-        let duration = start.elapsed();
-        info!("Time taken to get smoothed probabilities: {:.2?}", duration);
+        // let duration = start.elapsed();
+        // info!("Time taken to get smoothed probabilities: {:.2?}", duration);
 
         // Normalize the probabilities for every rule
-        // for (_, tokens) in &mut smoothed_probabilities {
-        //     let total_prob: f64 = tokens.iter().map(|(prob)| prob).sum();
-        //     for (prob) in tokens.iter_mut() {
-        //         *prob /= total_prob;
-        //     }
-        // }
+        for (_, tokens) in &mut smoothed_probabilities {
+            let total_prob: f64 = tokens.iter().map(|(prob)| prob).sum();
+            for (prob) in tokens.iter_mut() {
+                *prob /= total_prob;
+            }
+        }
 
         smoothed_probabilities
     }
 
-    pub fn get_unsmoothed_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<(u16, f64)>)> {
+    pub fn get_unsmoothed_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<f64>)> {
 
-        let mut rules_unsmoothed = Vec::<(String, Vec<(u16, f64)>)>::new();
+        let mut rules_unsmoothed = Vec::<(String, Vec<f64>)>::new();
 
         for r_set in &self.rule_set.iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
-            let matches = self.trie.find_all_nodes(&rule);
-            
-            // Use a HashMap to aggregate counts for same tokens
-            let token_count_map = matches.iter()
-                .flat_map(|node| node.children.iter())
-                .fold(std::collections::HashMap::new(), |mut map, (&token, child)| {
-                    *map.entry(token).or_insert(0) += child.count;
-                    map
+            let vocabulary_size = self.trie.root.children.len();
+            let nodes = self.trie.find_all_nodes(&rule);
+
+            let mut token_count_map: Vec<u32> = vec![0; vocabulary_size];
+            let mut result: Vec<f64> = vec![0.0; vocabulary_size];
+        
+            nodes.iter().for_each(|node| {
+                node.children.iter().for_each(|(key, child)| {
+                    token_count_map[*key as usize] += child.count;
                 });
+            });
 
-            // Convert HashMap to Vec and sort by token
-            let mut token_counts: Vec<(u16, u32)> = token_count_map.into_iter().collect();
-            token_counts.sort_by_key(|&(token, _)| token);
-
-            let total_count: u32 = token_counts.iter().map(|(_, count)| count).sum();
-            let token_probs: Vec<(u16, f64)> = token_counts.into_iter()
-                .map(|(token, count)| (token, count as f64 / total_count as f64))
-                .collect();
+            let total_count: u32 = token_count_map.iter().sum();
+            if total_count > 0 {
+                for i in 0..vocabulary_size {
+                    result[i] = token_count_map[i] as f64 / total_count as f64;
+                }
+            }
                 
-            rules_unsmoothed.push((r_set.to_string(), token_probs));
+            rules_unsmoothed.push((r_set.to_string(), result));
         }
         
         rules_unsmoothed

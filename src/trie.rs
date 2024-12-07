@@ -313,7 +313,9 @@ impl NGramTrie {
 
     pub fn count_nodes(&self) -> Vec<usize> {
         let mut counts = Vec::new();
-        for i in 0..self.n_gram_max_length {
+        counts.push(1);
+        for i in 1..self.n_gram_max_length {
+            // using root node so it doesn't cache anything
             counts.push(self.root.find_all_nodes(&vec![None; i as usize]).len());
         }
         counts
@@ -321,8 +323,10 @@ impl NGramTrie {
 
     pub fn average_branching_factor_per_layer(&self) -> Vec<f64> {
         let mut branching_factors = Vec::new();
-        for layer in 0..=self.n_gram_max_length-1 {
-            let nodes = self.find_all_nodes(&vec![None; layer as usize]);
+        branching_factors.push(self.root.children.len() as f64 / 1.0);
+        for layer in 1..=self.n_gram_max_length-1 {
+            // using root node so it doesn't cache anything
+            let nodes = self.root.find_all_nodes(&vec![None; layer as usize]);
             let total_nodes = nodes.len();
             if total_nodes == 0 {
                 branching_factors.push(0.0);

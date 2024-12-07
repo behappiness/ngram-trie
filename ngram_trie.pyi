@@ -130,7 +130,7 @@ class PySmoothedTrie:
         """
         ...
 
-    def get_unsmoothed_probabilities(self, history: List[int]) -> List[Tuple[str, List[Tuple[int, float]]]]:
+    def get_unsmoothed_probabilities(self, history: List[int]) -> List[Tuple[str, List[float]]]:
         """
         Get unsmoothed probabilities for a given history.
 

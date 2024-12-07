@@ -75,7 +75,7 @@ struct UnsmoothedProbabilityRequest {
 
 #[derive(Serialize)]
 struct UnsmoothedProbabilityResponse {
-    probabilities: Vec<(String, Vec<(u16, f64)>)>,
+    probabilities: Vec<(String, Vec<f64>)>,
 }
 
 async fn get_unsmoothed_probabilities(
@@ -94,7 +94,7 @@ struct SmoothedProbabilityRequest {
 
 #[derive(Serialize)]
 struct SmoothedProbabilityResponse {
-    probabilities: Vec<(String, Vec<(f64)>)>,
+    probabilities: Vec<(String, Vec<f64>)>,
 }
 
 async fn get_smoothed_probabilities(
@@ -159,7 +159,7 @@ fn main() {
     // info!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
-    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
     // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015];
     // smoothed_trie.set_all_ruleset_by_length(7);
     // let probabilities = smoothed_trie.get_smoothed_probabilities(&history, None);
@@ -199,9 +199,11 @@ fn main() {
     }
 
     println!("\nNodes per layer:");
-    let mut total_nodes = 0;
-    for layer in 0..=smoothed_trie.trie.n_gram_max_length {
-        let nodes = smoothed_trie.trie.find_all_nodes(&vec![None; layer as usize]).len();
+    let mut total_nodes = 1;
+    println!("Layer {}: {} nodes", 0, total_nodes);
+    for layer in 1..=smoothed_trie.trie.n_gram_max_length {
+        // using root node so it doesn't cache anything
+        let nodes = smoothed_trie.trie.root.find_all_nodes(&vec![None; layer as usize]).len();
         total_nodes += nodes;
         println!("Layer {}: {} nodes", layer, nodes);
     }
@@ -216,7 +218,7 @@ fn main() {
     println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
 
 
-    test_seq_smoothing(&mut smoothed_trie, history);
+    //test_seq_smoothing(&mut smoothed_trie, history);
 
 
     // start_http_server(smoothed_trie).unwrap();
