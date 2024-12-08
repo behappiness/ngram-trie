@@ -192,6 +192,9 @@ fn main() {
     // let elapsed = start.elapsed();
     // info!("Time taken for 32 random context predictions: {:.2?}", elapsed);
 
+    let root_count = smoothed_trie.trie.root.count;
+    println!("Root node count (tokens - ngram length + 1): {}", root_count);
+
     let branching_factors = smoothed_trie.average_branching_factor_per_layer();
     println!("Average branching factors per layer:");
     for (i, factor) in branching_factors.iter().enumerate() {
