@@ -10,7 +10,7 @@ use log::{info, debug};
 use hashbrown::{HashSet, HashMap};
 
 // the dataset size matters as well
-const CACHE_SIZE_S: usize = 610*3*128; //(rules+25%) = RULES
+const CACHE_SIZE_S: usize = 610*32; //(rules+25%) = RULES
 
 lazy_static! {
     pub static ref CACHE_S: Cache<Vec<Option<u16>>, Arc<Vec<f64>>> = Cache::new(CACHE_SIZE_S);

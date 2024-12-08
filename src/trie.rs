@@ -23,8 +23,8 @@ const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
 // the dataset size matters as well
-const CACHE_SIZE_C: usize = 610*3*128; //(rules+25%) = RULES*1.25
-const CACHE_SIZE_N: usize = 610*3*128; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_C: usize = 610*32; //(rules+25%) = RULES*1.25
+const CACHE_SIZE_N: usize = 610*32; //(rules+25%) = RULES*1.25
 
 lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, (Arc<Vec<u32>>, u32, (u32, u32, u32))> = Cache::new(CACHE_SIZE_C);
