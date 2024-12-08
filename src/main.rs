@@ -82,6 +82,7 @@ async fn get_unsmoothed_probabilities(
     smoothed_trie: web::Data<Arc<SmoothedTrie>>
 ) -> impl Responder {
     let probabilities = smoothed_trie.get_unsmoothed_probabilities(&req.history);
+    info!("Unsmoothed probabilities calculated");
     web::Json(UnsmoothedProbabilityResponse { probabilities })
 }
 
@@ -101,6 +102,7 @@ async fn get_smoothed_probabilities(
     smoothed_trie: web::Data<Arc<SmoothedTrie>>
 ) -> impl Responder {
     let probabilities = smoothed_trie.get_smoothed_probabilities(&req.history, req.rule_set.clone());
+    info!("Smoothed probabilities calculated");
     web::Json(SmoothedProbabilityResponse { probabilities })
 }
 
