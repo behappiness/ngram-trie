@@ -7,7 +7,7 @@ use trie::{NGramTrie, trienode::TrieNode, CACHE_C, CACHE_N};
 use smoothing::{ModifiedBackoffKneserNey, CACHE_S};
 use sorted_vector_map::SortedVectorMap;
 use smoothed_trie::SmoothedTrie;
-
+use jemallocator::Jemalloc;
 use rclite::Arc;
 use serde::Serialize;
 use serde::Deserialize;
@@ -16,6 +16,9 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use actix_web::{web, App, HttpServer, Responder};
 use log::{info, debug, error};
+
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize>, n_gram_lengths: Vec<u32>, output_file: &str) {
     let mut file = OpenOptions::new()

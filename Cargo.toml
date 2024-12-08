@@ -1,7 +1,7 @@
 [package]
 name = "ngram_trie"
 description = "A Rust-based n-gram trie library"
-version = "1.2.4"
+version = "1.2.5"
 authors = ["Botond Lovász <botilovasz@gmail.com>"]
 edition = "2021"
 readme = "README.md"
@@ -29,18 +29,19 @@ tqdm = "0.7"
 tokio = { version = "1.41.0", features = ["full"] }
 itertools = "0.13.0"
 sorted_vector_map = { git = "https://github.com/behappiness/sorted_vector_map" }
-pyo3 = { version = "0.22.5", features = ["extension-module"] }
+pyo3 = { version = "0.23.3", features = ["extension-module"] }
 lazy_static = "1.5.0"
 quick_cache = "0.6.9"
 simple-tqdm = { version = "0.2.0", features = ["rayon"] }
 rclite = { git = "https://github.com/behappiness/rclite" }
 log = "0.4.22"
 env_logger = "0.11.5"
-pyo3-log = "0.11.0"
+pyo3-log = "0.12.0"
 chrono = "0.4.38"
 dashmap = "6.1.0"
 rand = "0.8.5"
 hashbrown = "0.15.2"
+jemalloc-ctl = "0.5.4"
 
 [profile.dev]
 opt-level = 3
@@ -48,3 +49,6 @@ opt-level = 3
 [profile.release]
 #debug = true
 opt-level = 3
+
+[dependencies.jemallocator]
+version = "0.5.4"

@@ -12,7 +12,7 @@ pub struct TrieNode {
 impl TrieNode {
     pub fn new(capacity: Option<usize>) -> Self {
         TrieNode {
-            children: SortedVectorMap::with_capacity(capacity.unwrap_or(0)),
+            children: SortedVectorMap::with_capacity(capacity.unwrap_or(2)),
             count: 0,
         }
     }

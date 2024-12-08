@@ -17,7 +17,10 @@ use quick_cache::sync::Cache;
 use log::{info, error, debug};
 use simple_tqdm::Tqdm;
 use dashmap::DashSet;
+use jemalloc_ctl::{epoch, stats};
 use std::sync::atomic::{AtomicU32, Ordering};
+
+const RAM_LIMIT: usize = 127*1024*1024*1024; //127GByte
 
 const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
@@ -30,6 +33,11 @@ lazy_static! {
     pub static ref CACHE_C: Cache<Vec<Option<u16>>, (Arc<Vec<u32>>, u32, (u32, u32, u32))> = Cache::new(CACHE_SIZE_C);
     pub static ref CACHE_N: Cache<Vec<Option<u16>>, Arc<Vec<Arc<TrieNode>>>> = Cache::new(CACHE_SIZE_N);
 } 
+
+fn check_memory_usage() -> usize {
+    epoch::mib().unwrap().advance().unwrap();
+    stats::allocated::mib().unwrap().read().unwrap()
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NGramTrie {
@@ -47,7 +55,7 @@ impl NGramTrie {
     pub fn new(n_gram_max_length: u32, root_capacity: usize) -> Self {
         let mut node = TrieNode::new(Some(root_capacity));
         for i in 0..root_capacity {
-            node.children.insert(i as u16, Arc::new(TrieNode::new(None)));
+            node.children.insert(i as u16, Arc::new(TrieNode::new(Some(512))));
         }
         NGramTrie {
             root: Arc::new(node),
@@ -260,25 +268,22 @@ impl NGramTrie {
         let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
         let start = Instant::now();
-        
-        let save_point = (max_tokens - n_gram_max_length as usize + 1) * 3 / 4;
-        for i in (0..save_point).tqdm() {
-            trie.insert(&tokens[i..i + n_gram_max_length as usize]);
-        }
-        
-        // Save the trie at 3/4 point
-        trie.shrink_to_fit();
-        trie.save(".trie_checkpoint");
-        
-        // Load the trie and resume fitting
-        let mut trie = NGramTrie::load(".trie_checkpoint");
-        for i in (save_point..max_tokens - n_gram_max_length as usize + 1).tqdm() {
-            trie.insert(&tokens[i..i + n_gram_max_length as usize]);
-        }
 
-        std::fs::remove_file(".trie_checkpoint.trie").unwrap_or_else(|err| {
-            error!("Failed to delete checkpoint: {}", err);
-        });
+        let mut last_mem = check_memory_usage();
+        let mut check_interval = 1_000_000; // initial check interval
+
+        for i in (0..max_tokens - n_gram_max_length as usize + 1).tqdm() {
+            trie.insert(&tokens[i..i + n_gram_max_length as usize]);
+            if i % check_interval == 0 {
+                let current_mem = check_memory_usage();
+                if current_mem > RAM_LIMIT {
+                    break;
+                } else if current_mem - last_mem > RAM_LIMIT - current_mem {
+                    check_interval = check_interval / 2;
+                }
+                last_mem = current_mem;
+            }
+        }
         
         let duration = start.elapsed();
         info!("Time taken to fit trie: {:.2?}", duration);
