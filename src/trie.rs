@@ -275,10 +275,6 @@ impl NGramTrie {
         for i in (save_point..max_tokens - n_gram_max_length as usize + 1).tqdm() {
             trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
-
-        std::fs::remove_file("trie_checkpoint").unwrap_or_else(|err| {
-            error!("Failed to delete checkpoint: {}", err);
-        });
         
         let duration = start.elapsed();
         info!("Time taken to fit trie: {:.2?}", duration);
