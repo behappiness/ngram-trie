@@ -41,7 +41,6 @@ chrono = "0.4.38"
 dashmap = "6.1.0"
 rand = "0.8.5"
 hashbrown = "0.15.2"
-jemalloc-ctl = "0.5.4"
 
 [profile.dev]
 opt-level = 3
@@ -49,6 +48,3 @@ opt-level = 3
 [profile.release]
 #debug = true
 opt-level = 3
-
-[dependencies.jemallocator]
-version = "0.5.4"
