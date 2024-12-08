@@ -143,12 +143,12 @@ fn main() {
     
     let mut smoothed_trie = SmoothedTrie::new(NGramTrie::new(9, 2_usize.pow(14)), None);
 
-    // let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
-    // smoothed_trie.fit(tokens, 8, 2_usize.pow(14), None, Some("modified_kneser_ney".to_string()));
+    let tokens = NGramTrie::load_json("../170k_tokens.json", None).unwrap();
+    smoothed_trie.fit(tokens, 8, 2_usize.pow(14), None, Some("modified_kneser_ney".to_string()));
 
     // smoothed_trie.save("trie");
 
-    smoothed_trie.load("ngram");
+    //smoothed_trie.load("ngram");
 
     // info!("----- Getting rule count -----");
     // let rule = NGramTrie::_preprocess_rule_context(&vec![987, 4015, 935, 2940, 3947, 987, 4015], Some("+++*++*"));

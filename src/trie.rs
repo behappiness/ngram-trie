@@ -268,13 +268,17 @@ impl NGramTrie {
         
         // Save the trie at 3/4 point
         trie.shrink_to_fit();
-        trie.save("trie_checkpoint");
+        trie.save(".trie_checkpoint");
         
         // Load the trie and resume fitting
-        let mut trie = NGramTrie::load("trie_checkpoint");
+        let mut trie = NGramTrie::load(".trie_checkpoint");
         for i in (save_point..max_tokens - n_gram_max_length as usize + 1).tqdm() {
             trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
+
+        std::fs::remove_file(".trie_checkpoint.trie").unwrap_or_else(|err| {
+            error!("Failed to delete checkpoint: {}", err);
+        });
         
         let duration = start.elapsed();
         info!("Time taken to fit trie: {:.2?}", duration);
