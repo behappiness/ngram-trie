@@ -23,7 +23,7 @@ const BATCH_SIZE: usize = 5_000_000;
 const BATCH_ROOT_CAPACITY: usize = 0;
 
 // the dataset size matters as well
-const CACHE_SIZE_C: usize = 610*16384; //(rules+25%)*keys = RULES*KEYS
+const CACHE_SIZE_C: usize = 610*3*128; //(rules+25%) = RULES*1.25
 const CACHE_SIZE_N: usize = 610*3*128; //(rules+25%) = RULES*1.25
 
 lazy_static! {
@@ -260,9 +260,26 @@ impl NGramTrie {
         let mut trie = NGramTrie::new(n_gram_max_length, root_capacity);
         let max_tokens = max_tokens.unwrap_or(tokens.len()).min(tokens.len());
         let start = Instant::now();
-        for i in (0..max_tokens - n_gram_max_length as usize + 1).tqdm() {
+        
+        let save_point = (max_tokens - n_gram_max_length as usize + 1) * 3 / 4;
+        for i in (0..save_point).tqdm() {
             trie.insert(&tokens[i..i + n_gram_max_length as usize]);
         }
+        
+        // Save the trie at 3/4 point
+        trie.shrink_to_fit();
+        trie.save("trie_checkpoint");
+        
+        // Load the trie and resume fitting
+        let mut trie = NGramTrie::load("trie_checkpoint");
+        for i in (save_point..max_tokens - n_gram_max_length as usize + 1).tqdm() {
+            trie.insert(&tokens[i..i + n_gram_max_length as usize]);
+        }
+
+        std::fs::remove_file("trie_checkpoint").unwrap_or_else(|err| {
+            error!("Failed to delete checkpoint: {}", err);
+        });
+        
         let duration = start.elapsed();
         info!("Time taken to fit trie: {:.2?}", duration);
         trie.shrink_to_fit();
