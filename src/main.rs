@@ -37,9 +37,9 @@ fn test_performance_and_write_stats(tokens: Arc<Vec<u16>>, data_sizes: Vec<usize
             //let trie = NGramTrie::fit_multithreaded(tokens.clone(), ranges, *n_gram_length);
             //let trie = NGramTrie::fit_multithreaded_recursively(tokens.clone(), ranges, *n_gram_length);
             let trie = NGramTrie::fit(tokens.clone(), *n_gram_length, 2_usize.pow(14), Some(data_size));
-            let fit_time = start.elapsed().as_secs_f64(); 
+            let fit_time = start.elapsed().as_secs_f32(); 
             // Measure RAM usage
-            let ram_usage = 0 as f64 / (1024.0 * 1024.0);
+            let ram_usage = 0 as f32 / (1024.0 * 1024.0);
 
             // Write statistics to file
             writeln!(
@@ -74,7 +74,7 @@ struct UnsmoothedProbabilityRequest {
 
 #[derive(Serialize)]
 struct UnsmoothedProbabilityResponse {
-    probabilities: Vec<(String, Vec<f64>)>,
+    probabilities: Vec<(String, Vec<f32>)>,
 }
 
 async fn get_unsmoothed_probabilities(
@@ -94,7 +94,7 @@ struct SmoothedProbabilityRequest {
 
 #[derive(Serialize)]
 struct SmoothedProbabilityResponse {
-    probabilities: Vec<(String, Vec<f64>)>,
+    probabilities: Vec<(String, Vec<f32>)>,
 }
 
 async fn get_smoothed_probabilities(
@@ -160,13 +160,13 @@ fn main() {
     // info!("Time taken: {:.2?}", elapsed);
     
     // 170k_tokens
-    // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
+    let history = vec![987, 4015, 935, 2940, 3947, 987, 4015, 3042, 652, 987, 3211, 278, 4230];
     // let history = vec![987, 4015, 935, 2940, 3947, 987, 4015];
     // smoothed_trie.set_all_ruleset_by_length(7);
     // let probabilities = smoothed_trie.get_smoothed_probabilities(&history, None);
 
     // for (rule, token_probs) in &probabilities {
-    //     let total_prob: f64 = token_probs.iter().map(|prob| prob).sum();
+    //     let total_prob: f32 = token_probs.iter().map(|prob| prob).sum();
     //     println!("Rule: {}, Total Probability: {:.6}", rule, total_prob);
     // }
     // for p in probabilities[369].1.iter() {
@@ -219,12 +219,12 @@ fn main() {
         running_product *= factor;
         cumprod.push(running_product);
     }
-    println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f64>() + 1.0);
+    println!("Sum of cumulative product of branching factors: {:.2?}", cumprod.into_iter().sum::<f32>() + 1.0);
 
-    // for _ in 0..100 {
-    //     test_seq_smoothing(&mut smoothed_trie, history.clone());
-    //     smoothed_trie.reset_cache();
-    // }
+    for _ in 0..100 {
+        test_seq_smoothing(&mut smoothed_trie, history.clone());
+        smoothed_trie.reset_cache();
+    }
 
     start_http_server(smoothed_trie).unwrap();
 }

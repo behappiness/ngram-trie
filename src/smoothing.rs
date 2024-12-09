@@ -13,11 +13,11 @@ use hashbrown::{HashSet, HashMap};
 const CACHE_SIZE_S: usize = 610*32; //(rules+25%) = RULES
 
 lazy_static! {
-    pub static ref CACHE_S: Cache<Vec<Option<u16>>, Arc<Vec<f64>>> = Cache::new(CACHE_SIZE_S);
+    pub static ref CACHE_S: Cache<Vec<Option<u16>>, Arc<Vec<f32>>> = Cache::new(CACHE_SIZE_S);
 }   
 
 pub trait Smoothing: Sync + Send {
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>>;
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f32>>;
     fn save(&self, filename: &str);
     fn load(&mut self, filename: &str);
     fn reset_cache(&self);
@@ -25,10 +25,10 @@ pub trait Smoothing: Sync + Send {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ModifiedBackoffKneserNey {
-    pub d1: Vec<f64>,
-    pub d2: Vec<f64>,
-    pub d3: Vec<f64>,
-    pub unigram: Vec<f64>,
+    pub d1: Vec<f32>,
+    pub d2: Vec<f32>,
+    pub d3: Vec<f32>,
+    pub unigram: Vec<f32>,
     pub vocabulary_size: usize,
     #[serde(skip)]
     pub trie: Arc<NGramTrie>
@@ -48,7 +48,7 @@ impl ModifiedBackoffKneserNey {
         }
     }
 
-    pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (Vec<f64>, Vec<f64>, Vec<f64>, f64) {
+    pub fn calculate_d_values(trie: Arc<NGramTrie>) -> (Vec<f32>, Vec<f32>, Vec<f32>, f32) {
         let mut d1 = vec![0.0; trie.n_gram_max_length as usize];
         let mut d2 = vec![0.0; trie.n_gram_max_length as usize];
         let mut d3 = vec![0.0; trie.n_gram_max_length as usize];
@@ -79,7 +79,7 @@ impl ModifiedBackoffKneserNey {
             ns[level as usize - 1][3] = n4.load(Ordering::Relaxed);
         }
 
-        let uniform = 1.0 / trie.root.children.len() as f64;
+        let uniform = 1.0 / trie.root.children.len() as f32;
 
         for i in 0..trie.n_gram_max_length as usize {
             if ns[i][0] == 0 || ns[i][1] == 0 || ns[i][2] == 0 || ns[i][3] == 0 {
@@ -87,10 +87,10 @@ impl ModifiedBackoffKneserNey {
                 d2[i] = 0.2;
                 d3[i] = 0.3;
             } else {
-                let y = ns[i][0] as f64 / (ns[i][0] as f64 + 2.0 * ns[i][1] as f64);
-                d1[i] = 1.0 - 2.0 * y * (ns[i][1] as f64 / ns[i][0] as f64);
-                d2[i] = 2.0 - 3.0 * y * (ns[i][2] as f64 / ns[i][1] as f64);
-                d3[i] = 3.0 - 4.0 * y * (ns[i][3] as f64 / ns[i][2] as f64);
+                let y = ns[i][0] as f32 / (ns[i][0] as f32 + 2.0 * ns[i][1] as f32);
+                d1[i] = 1.0 - 2.0 * y * (ns[i][1] as f32 / ns[i][0] as f32);
+                d2[i] = 2.0 - 3.0 * y * (ns[i][2] as f32 / ns[i][1] as f32);
+                d3[i] = 3.0 - 4.0 * y * (ns[i][3] as f32 / ns[i][2] as f32);
             }
         }
 
@@ -104,9 +104,9 @@ impl ModifiedBackoffKneserNey {
         \\[ \n\
         P_{\text{KN}}(w) = \\frac{\text{Number of unique bigrams ending in } w}{\text{Total number of unique bigrams}} \n\
         \\]"]
-    pub fn calculate_unigram_distribution(trie: Arc<NGramTrie>) -> Vec<f64> {
+    pub fn calculate_unigram_distribution(trie: Arc<NGramTrie>) -> Vec<f32> {
         let mut continuation_counts: HashMap<u16, HashSet<u16>> = HashMap::new();
-        let mut unigram: Vec<f64> = vec![0.0; trie.root.children.len()];
+        let mut unigram: Vec<f32> = vec![0.0; trie.root.children.len()];
 
         trie.root.children.iter().for_each(|(first_key, child)| {
             child.children.iter().for_each(|(second_key, _)| {
@@ -119,21 +119,21 @@ impl ModifiedBackoffKneserNey {
 
         // Calculate unigram distribution
         for (key, contexts) in continuation_counts.iter() {
-            unigram[*key as usize] = contexts.len() as f64 / total_unique_bigrams as f64;
+            unigram[*key as usize] = contexts.len() as f32 / total_unique_bigrams as f32;
         }
 
         // Normalize the unigram array
-        let sum: f64 = unigram.iter().sum();
+        let sum: f32 = unigram.iter().sum();
         if sum > 0.0 {
         for value in unigram.iter_mut() {
                 *value /= sum;
             }
         }
-        debug!("Sum of unigrams: {:.4}", unigram.iter().sum::<f64>());
+        debug!("Sum of unigrams: {:.4}", unigram.iter().sum::<f32>());
         unigram
     }
 
-    pub fn calc_smoothed(&self, c_i: u32, c_i_minus_1: u32, level: usize, ns: (u32, u32, u32), s: f64) -> f64 {
+    pub fn calc_smoothed(&self, c_i: u32, c_i_minus_1: u32, level: usize, ns: (u32, u32, u32), s: f32) -> f32 {
         if c_i_minus_1 > 0 {
             let d = match c_i {
                 0 => 0.0,
@@ -142,8 +142,8 @@ impl ModifiedBackoffKneserNey {
                 _ => self.d3[level]
             };
 
-            let alpha = (c_i as f64 - d).max(0.0) / c_i_minus_1 as f64;
-            let gamma = (self.d1[level] * ns.0 as f64 + self.d2[level] * ns.1 as f64 + self.d3[level] * ns.2 as f64) / c_i_minus_1 as f64;
+            let alpha = (c_i as f32 - d).max(0.0) / c_i_minus_1 as f32;
+            let gamma = (self.d1[level] * ns.0 as f32 + self.d2[level] * ns.1 as f32 + self.d3[level] * ns.2 as f32) / c_i_minus_1 as f32;
             alpha + gamma * s
         } else {
             s
@@ -158,7 +158,7 @@ impl ModifiedBackoffKneserNey {
         // let mut n3 = HashSet::<u16>::new();
 
         // let mut token_count_map: Vec<u32> = vec![0; self.vocabulary_size];
-        // let mut result: Vec<f64> = vec![self.uniform; self.vocabulary_size];
+        // let mut result: Vec<f32> = vec![self.uniform; self.vocabulary_size];
 
         // nodes.iter().for_each(|node| {
         //     node.children.iter().for_each(|(key, child)| {
@@ -206,13 +206,13 @@ impl Smoothing for ModifiedBackoffKneserNey {
         self.init_cache();
     }
 
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>> {
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f32>> {
         if let Some(cached_value) = CACHE_S.get(rule) {
             return cached_value.clone();
         }
 
         let (token_count_map, c_i_minus_1, ns) = trie.get_token_count_map(&rule);
-        let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
+        let mut result: Vec<f32> = vec![0.0; token_count_map.len()];
 
         let s_map = self.smoothing(trie, &rule[..rule.len()-1]);
 
@@ -229,12 +229,12 @@ impl Smoothing for ModifiedBackoffKneserNey {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct StupidBackoff {
-    pub backoff_factor: f64,
+    pub backoff_factor: f32,
     pub vocabulary_size: usize
 }
 
 impl StupidBackoff {
-    pub fn new(trie: Arc<NGramTrie>, backoff_factor: Option<f64>) -> Self {
+    pub fn new(trie: Arc<NGramTrie>, backoff_factor: Option<f32>) -> Self {
         StupidBackoff { backoff_factor: backoff_factor.unwrap_or(0.4), vocabulary_size: trie.root.children.len() as usize }
     }
 
@@ -242,9 +242,9 @@ impl StupidBackoff {
         CACHE_S.insert(vec![], Arc::new(vec![0.0; self.vocabulary_size]));
     }
 
-    pub fn calc_stupid_backoff(&self, c_i: u32, c_i_minus_1: u32, s: f64) -> f64 {
+    pub fn calc_stupid_backoff(&self, c_i: u32, c_i_minus_1: u32, s: f32) -> f32 {
         if c_i > 0 {
-            c_i as f64 / c_i_minus_1 as f64
+            c_i as f32 / c_i_minus_1 as f32
         } else {
             self.backoff_factor * s
         }
@@ -252,13 +252,13 @@ impl StupidBackoff {
 }
 
 impl Smoothing for StupidBackoff {
-    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f64>> {
+    fn smoothing(&self, trie: Arc<NGramTrie>, rule: &[Option<u16>]) -> Arc<Vec<f32>> {
         if let Some(cached_value) = CACHE_S.get(rule) {
             return cached_value.clone();
         }
 
         let (token_count_map, c_i_minus_1, _) = trie.get_token_count_map(&rule);
-        let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
+        let mut result: Vec<f32> = vec![0.0; token_count_map.len()];
 
         let s_map = self.smoothing(trie, &rule[..rule.len()-1]);
 

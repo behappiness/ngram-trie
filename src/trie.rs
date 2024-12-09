@@ -99,7 +99,7 @@ impl NGramTrie {
             error!("Unable to get file metadata {}: {}", &_file, e);
             panic!("Unable to get file metadata");
         }).len();
-        let file_size_mb = file_size as f64 / (1024.0 * 1024.0);
+        let file_size_mb = file_size as f32 / (1024.0 * 1024.0);
         info!("Size of saved file: {:.2} MB", file_size_mb);
     }
 
@@ -243,10 +243,10 @@ impl NGramTrie {
         }
     }
 
-    pub fn estimate_time_and_ram(tokens_size: usize) -> (f64, f64) {
-        let x = tokens_size as f64;
+    pub fn estimate_time_and_ram(tokens_size: usize) -> (f32, f32) {
+        let x = tokens_size as f32;
         let y = 0.0021 * x.powf(0.8525);
-        let _x = (y / 0.0021).powf(1.0 / 0.8525) as f64; //how many can be fit in RAM
+        let _x = (y / 0.0021).powf(1.0 / 0.8525) as f32; //how many can be fit in RAM
         let t = (2.8072 * x / 1_000_000.0 - 0.124) / 60.0; //how long it will take to fit
         info!("Expected time for {} tokens: {:.2} min", tokens_size, t);
         info!("Expected ram usage for {} tokens: {:.2} MB", tokens_size, y);
@@ -278,7 +278,7 @@ impl NGramTrie {
         let tokens_size = max_tokens.unwrap_or(tokens.len());
         NGramTrie::estimate_time_and_ram(tokens_size);
         let batch_size = BATCH_SIZE;
-        let num_batches = (tokens_size as f64 / batch_size as f64).ceil() as usize;
+        let num_batches = (tokens_size as f32 / batch_size as f32).ceil() as usize;
 
         let mut tries: Vec<(Self, Range<usize>)> = Vec::new();
         for batch in 0..num_batches {
@@ -316,13 +316,13 @@ impl NGramTrie {
         let mut tokens: Vec<u16> = serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let duration = start.elapsed();
         info!("Time taken to load tokens: {:.2?}", duration);
-        debug!("Size of tokens in RAM before truncation: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
+        debug!("Size of tokens in RAM before truncation: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f32 / 1024.0 / 1024.0);
         if let Some(max) = max_tokens {
             if max < tokens.len() {
                 tokens.truncate(max);
             }
         }
-        info!("Size of tokens in RAM: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f64 / 1024.0 / 1024.0);
+        info!("Size of tokens in RAM: {:.2} MB", (tokens.len() * std::mem::size_of::<u16>()) as f32 / 1024.0 / 1024.0);
         info!("Tokens loaded: {}", tokens.len());
         Ok(Arc::new(tokens))
     }
@@ -350,9 +350,9 @@ impl NGramTrie {
         counts
     }
 
-    pub fn average_branching_factor_per_layer(&self) -> Vec<f64> {
+    pub fn average_branching_factor_per_layer(&self) -> Vec<f32> {
         let mut branching_factors = Vec::new();
-        branching_factors.push(self.root.children.len() as f64 / 1.0);
+        branching_factors.push(self.root.children.len() as f32 / 1.0);
         for layer in 1..=self.n_gram_max_length-1 {
             // using root node so it doesn't cache anything
             let nodes = self.root.find_all_nodes(&vec![None; layer as usize]);
@@ -364,7 +364,7 @@ impl NGramTrie {
             let total_continuations: usize = nodes.iter()
                 .map(|node| node.children.len())
                 .sum();
-            branching_factors.push(total_continuations as f64 / total_nodes as f64);
+            branching_factors.push(total_continuations as f32 / total_nodes as f32);
         }
         branching_factors
     }

@@ -110,7 +110,7 @@ impl SmoothedTrie {
         debug!("CACHE_N size: {}", CACHE_N.len());
     }
 
-    pub fn get_smoothed_probabilities(&self, history: &[u16], rule_set: Option<Vec<String>>) -> Vec<(String, Vec<f64>)> { 
+    pub fn get_smoothed_probabilities(&self, history: &[u16], rule_set: Option<Vec<String>>) -> Vec<(String, Vec<f32>)> { 
         // info!("----- Getting smoothed probabilities -----");
         // let start = Instant::now();
         // if history.len() >= self.trie.n_gram_max_length as usize {
@@ -127,7 +127,7 @@ impl SmoothedTrie {
         };
 
         //needs testing on big dataset
-        let mut smoothed_probabilities: Vec<(String, Vec<(f64)>)> = rule_set.par_iter().filter(|r| r.len() <= history.len()).map(|r| {
+        let mut smoothed_probabilities: Vec<(String, Vec<(f32)>)> = rule_set.par_iter().filter(|r| r.len() <= history.len()).map(|r| {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r));
             (r.to_string(), self.smoothing.smoothing(self.trie.clone(), &rule).to_vec())
         }).collect();
@@ -141,21 +141,21 @@ impl SmoothedTrie {
         smoothed_probabilities
     }
 
-    pub fn get_unsmoothed_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<f64>)> {
+    pub fn get_unsmoothed_probabilities(&self, history: &[u16]) -> Vec<(String, Vec<f32>)> {
 
-        let mut rules_unsmoothed = Vec::<(String, Vec<f64>)>::new();
+        let mut rules_unsmoothed = Vec::<(String, Vec<f32>)>::new();
 
         //needs testing on big dataset
         for r_set in &self.rule_set.par_iter().filter(|r| r.len() <= history.len()).collect::<Vec<_>>()[..] {
             let rule = NGramTrie::_preprocess_rule_context(history, Some(&r_set));
 
             let (token_count_map, total_count, _) = self.trie.get_token_count_map(&rule);
-            let mut result: Vec<f64> = vec![0.0; token_count_map.len()];
+            let mut result: Vec<f32> = vec![0.0; token_count_map.len()];
         
             if total_count > 0 {
                 //par doesnt help on small dataset so it wont help on big one (small array 16384)
                 result.iter_mut().enumerate().for_each(|(i, res)| {
-                    *res = token_count_map[i] as f64 / total_count as f64;
+                    *res = token_count_map[i] as f32 / total_count as f32;
                 });
             }
             
@@ -165,10 +165,10 @@ impl SmoothedTrie {
         rules_unsmoothed
     }
 
-    pub fn normalize_probabilities(probabilities: &mut Vec<(String, Vec<f64>)>) {
+    pub fn normalize_probabilities(probabilities: &mut Vec<(String, Vec<f32>)>) {
         // Normalize the probabilities for every rule
         for (_, tokens) in probabilities {
-            let total_prob: f64 = tokens.iter().map(|(prob)| prob).sum();
+            let total_prob: f32 = tokens.iter().map(|(prob)| prob).sum();
             for (prob) in tokens.iter_mut() {
                 *prob /= total_prob;
             }
@@ -194,7 +194,7 @@ impl SmoothedTrie {
         self.trie.count_nodes()
     }
 
-    pub fn average_branching_factor_per_layer(&self) -> Vec<f64> {
+    pub fn average_branching_factor_per_layer(&self) -> Vec<f32> {
         self.trie.average_branching_factor_per_layer()
     }
 }

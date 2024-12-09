@@ -118,14 +118,14 @@ impl PySmoothedTrie {
                  history (List[int]): List of token IDs (must be uint16)\n\
                  rule_set (List[str]): List of smoothing rules. Example: ['+', '++', '+*-']"]
     #[pyo3(signature = (history, rule_set=None))]
-    fn get_smoothed_probabilities(&self, history: Vec<u16>, rule_set: Option<Vec<String>>) -> Vec<(String, Vec<f64>)> {
+    fn get_smoothed_probabilities(&self, history: Vec<u16>, rule_set: Option<Vec<String>>) -> Vec<(String, Vec<f32>)> {
         self.smoothed_trie.get_smoothed_probabilities(&history, rule_set)
     }
 
     #[doc = "Get unsmoothed probabilities for a given history.\n\n\
              Args:\n\
                  history (List[int]): List of token IDs (must be uint16)"]
-    fn get_unsmoothed_probabilities(&self, history: Vec<u16>) -> Vec<(String, Vec<f64>)> {
+    fn get_unsmoothed_probabilities(&self, history: Vec<u16>) -> Vec<(String, Vec<f32>)> {
         self.smoothed_trie.get_unsmoothed_probabilities(&history)
     }
 
