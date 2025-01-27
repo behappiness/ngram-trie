@@ -65,4 +65,6 @@ cargo add pyo3 --features extension-module
 maturin build
 ```
 
+Possible new developments could include http support for all functions. Distributed computing with a master node (distributing based on rules and counts of n-grams).
+
 
